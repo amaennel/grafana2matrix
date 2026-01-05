@@ -303,23 +303,18 @@ app.post('/webhook', async (req, res) => {
                         return false;
                     };
 
-                    // Check secondary first (priority logic from summaries, though here we might want all? 
-                    // Usually priority implies one wins. I'll stick to the "one mention type wins" logic 
-                    // from checkSummaries for consistency, or just mention all who match 0?
-                    // "We decide which user(s) to mention based on a config file."
-                    // If both are 0, usually secondary implies higher escalation, but if both are 0 it means "notify immediately".
-                    // The previous logic in checkSummaries was exclusive: if secondary matches, use secondary, else primary.
-                    // I will replicate that exclusive logic here.
-                    
-                    let mentionType = null;
+                    // Check all applicable types
                     if (checkImmediate('secondary')) {
-                        mentionType = 'secondary';
-                    } else if (checkImmediate('primary')) {
-                        mentionType = 'primary';
+                         immediateMentions.push(...config['secondary']);
+                    } 
+                    if (checkImmediate('primary')) {
+                         immediateMentions.push(...config['primary']);
                     }
+                    
+                    // Deduplicate
+                    immediateMentions = [...new Set(immediateMentions)];
 
-                    if (mentionType) {
-                        immediateMentions = config[mentionType];
+                    if (immediateMentions.length > 0) {
                         matrixMessage += `\nAttention: ${immediateMentions.join(' ')}\n`;
                     }
                 }
@@ -450,23 +445,27 @@ const checkSummaries = async () => {
             return false;
         };
 
-        let mentionType = null;
+        let usersToMention = [];
         if (checkMention('secondary')) {
-            mentionType = 'secondary';
-        } else if (checkMention('primary')) {
-            mentionType = 'primary';
+            usersToMention.push(...config['secondary']);
+        }
+        if (checkMention('primary')) {
+            usersToMention.push(...config['primary']);
         }
 
-        if (mentionType) {
-            alertsNeedingMention.push({ id, alert, mentionType, users: config[mentionType] });
+        // Deduplicate
+        usersToMention = [...new Set(usersToMention)];
+
+        if (usersToMention.length > 0) {
+            alertsNeedingMention.push({ id, alert, users: usersToMention.sort() });
         }
     }
 
     if (alertsNeedingMention.length > 0) {
-        // Group by mentionType and users to minimize messages
+        // Group by users to minimize messages
         const groups = {};
         for (const item of alertsNeedingMention) {
-            const key = `${item.mentionType}_${item.users.join(',')}`;
+            const key = item.users.join(',');
             if (!groups[key]) groups[key] = { users: item.users, alerts: [] };
             groups[key].alerts.push(item);
         }
