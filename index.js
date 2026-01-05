@@ -1,5 +1,6 @@
 require('dotenv').config();
 const express = require('express');
+const fs = require('fs');
 
 const crypto = require('crypto');
 
@@ -240,6 +241,10 @@ app.post('/webhook', async (req, res) => {
                 if (alertStatus === 'firing') {
                     if (!activeAlerts.has(id)) {
                         alertsToNotify.push(alert);
+                        alert.mentionsSent = { primary: false, secondary: false };
+                    } else {
+                        const existing = activeAlerts.get(id);
+                        alert.mentionsSent = existing.mentionsSent || { primary: false, secondary: false };
                     }
                     // Always update/add the alert to map to keep latest state
                     activeAlerts.set(id, alert);
@@ -259,11 +264,13 @@ app.post('/webhook', async (req, res) => {
             }
 
             // Send separate message for each alert
+            const mentionConfig = getMentionConfig();
             for (const a of alertsToNotify) {
                 const alertName = a.labels?.alertname || 'Unknown Alert';
                 const host = a.labels?.host || a.labels?.instance || 'Unknown Host';
                 const summary = a.annotations?.summary || '';
                 const description = a.annotations?.description || a.annotations?.message || '';
+                const severity = (a.labels?.severity || '').toUpperCase();
                 
                 const isFiring = a.status === 'firing';
                 const icon = isFiring ? '🚨' : '✅';
@@ -277,6 +284,44 @@ app.post('/webhook', async (req, res) => {
                 
                 if (description) {
                     matrixMessage += `${description}\n`;
+                }
+
+                // Check for immediate mentions
+                if (isFiring && mentionConfig[host]) {
+                    const config = mentionConfig[host];
+                    let immediateMentions = [];
+
+                    const checkImmediate = (type) => {
+                        const delayCrit = config[`delay_crit_${type}`];
+                        const delayWarn = config[`delay_warn_${type}`];
+
+                        if (severity === 'CRITICAL' || severity === 'CRIT') {
+                            return delayCrit === 0;
+                        } else if (severity === 'WARNING' || severity === 'WARN') {
+                            return delayWarn === 0;
+                        }
+                        return false;
+                    };
+
+                    // Check secondary first (priority logic from summaries, though here we might want all? 
+                    // Usually priority implies one wins. I'll stick to the "one mention type wins" logic 
+                    // from checkSummaries for consistency, or just mention all who match 0?
+                    // "We decide which user(s) to mention based on a config file."
+                    // If both are 0, usually secondary implies higher escalation, but if both are 0 it means "notify immediately".
+                    // The previous logic in checkSummaries was exclusive: if secondary matches, use secondary, else primary.
+                    // I will replicate that exclusive logic here.
+                    
+                    let mentionType = null;
+                    if (checkImmediate('secondary')) {
+                        mentionType = 'secondary';
+                    } else if (checkImmediate('primary')) {
+                        mentionType = 'primary';
+                    }
+
+                    if (mentionType) {
+                        immediateMentions = config[mentionType];
+                        matrixMessage += `\nAttention: ${immediateMentions.join(' ')}\n`;
+                    }
                 }
 
                 const links = [];
@@ -360,11 +405,85 @@ async function listJoinedRooms() {
     }
 }
 
+// Helper to get mention config
+const getMentionConfig = () => {
+    const configPath = process.env.MENTION_CONFIG_PATH;
+    if (!configPath) return {};
+    try {
+        if (fs.existsSync(configPath)) {
+            return JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        }
+    } catch (e) {
+        console.error('Error reading mention config:', e.message);
+    }
+    return {};
+};
+
 // Periodic Summary Logic
 const checkSummaries = async () => {
     const now = Date.now();
     const CRIT_INTERVAL = parseInt(process.env.SUMMARY_INTERVAL_CRIT_MS) || 2 * 60 * 60 * 1000; // Default 2 hours
     const WARN_INTERVAL = parseInt(process.env.SUMMARY_INTERVAL_WARN_MS) || 4 * 60 * 60 * 1000; // Default 4 hours
+
+    const mentionConfig = getMentionConfig();
+
+    // Check for alerts that need mentions
+    const alertsNeedingMention = [];
+    for (const [id, alert] of activeAlerts.entries()) {
+        const host = alert.labels?.host || alert.labels?.instance;
+        if (!host || !mentionConfig[host]) continue;
+
+        const config = mentionConfig[host];
+        const severity = (alert.labels?.severity || '').toUpperCase();
+        const startsAt = new Date(alert.startsAt).getTime();
+        const durationMinutes = (now - startsAt) / (1000 * 60);
+
+        const checkMention = (type) => {
+            const delayCrit = config[`delay_crit_${type}`];
+            const delayWarn = config[`delay_warn_${type}`];
+
+            if (severity === 'CRITICAL' || severity === 'CRIT') {
+                return delayCrit >= 0 && durationMinutes >= delayCrit;
+            } else if (severity === 'WARNING' || severity === 'WARN') {
+                return delayWarn >= 0 && durationMinutes >= delayWarn;
+            }
+            return false;
+        };
+
+        let mentionType = null;
+        if (checkMention('secondary')) {
+            mentionType = 'secondary';
+        } else if (checkMention('primary')) {
+            mentionType = 'primary';
+        }
+
+        if (mentionType) {
+            alertsNeedingMention.push({ id, alert, mentionType, users: config[mentionType] });
+        }
+    }
+
+    if (alertsNeedingMention.length > 0) {
+        // Group by mentionType and users to minimize messages
+        const groups = {};
+        for (const item of alertsNeedingMention) {
+            const key = `${item.mentionType}_${item.users.join(',')}`;
+            if (!groups[key]) groups[key] = { users: item.users, alerts: [] };
+            groups[key].alerts.push(item);
+        }
+
+        for (const key in groups) {
+            const group = groups[key];
+            let msg = `## ⚠️ Persistent Alert Notification\n\n`;
+            msg += `The following alerts have been active for a significant time:\n\n`;
+            for (const item of group.alerts) {
+                const alertName = item.alert.labels?.alertname || 'Unknown Alert';
+                const host = item.alert.labels?.host || item.alert.labels?.instance || 'Unknown Host';
+                msg += `- **${alertName}** on **${host}**\n`;
+            }
+            msg += `\nAttention: ${group.users.join(' ')}`;
+            await sendMatrixNotification(msg);
+        }
+    }
 
     const sendSummary = async (severity) => {
         const alertsForSeverity = [];
