@@ -12,7 +12,6 @@ const MATRIX_ROOM_ID = process.env.MATRIX_ROOM_ID;
 const GRAFANA_URL = process.env.GRAFANA_URL;
 const GRAFANA_API_KEY = process.env.GRAFANA_API_KEY;
 
-console.log(MATRIX_ACCESS_TOKEN, MATRIX_ROOM_ID, GRAFANA_URL ? 'Grafana URL Set' : 'No Grafana URL');
 
 // In-memory store for active alerts (fingerprints) -> Alert Object
 const activeAlerts = new Map();
@@ -125,6 +124,12 @@ async function createGrafanaSilence(alertId, matrixEventId) {
         }
 
         console.log(`Alert ${alertId} silenced successfully.`);
+        
+        // Mark locally as silenced
+        if (activeAlerts.has(alertId)) {
+            activeAlerts.get(alertId).silencedUntil = endsAt;
+        }
+
         await sendMatrixNotification(`🔇 Alert silenced for 24h: ${alert.labels.alertname}`);
 
         if (matrixEventId) {
@@ -245,6 +250,9 @@ app.post('/webhook', async (req, res) => {
                     } else {
                         const existing = activeAlerts.get(id);
                         alert.mentionsSent = existing.mentionsSent || { primary: false, secondary: false };
+                        if (existing.silencedUntil) {
+                            alert.silencedUntil = existing.silencedUntil;
+                        }
                     }
                     // Always update/add the alert to map to keep latest state
                     activeAlerts.set(id, alert);
@@ -477,7 +485,11 @@ const checkSummaries = async () => {
             for (const item of group.alerts) {
                 const alertName = item.alert.labels?.alertname || 'Unknown Alert';
                 const host = item.alert.labels?.host || item.alert.labels?.instance || 'Unknown Host';
-                msg += `- **${alertName}** on **${host}**\n`;
+                
+                const isSilenced = item.alert.silencedUntil && new Date(item.alert.silencedUntil) > Date.now();
+                const silenceIcon = isSilenced ? '🔇 ' : '';
+                
+                msg += `- ${silenceIcon}**${alertName}** on **${host}**\n`;
             }
             msg += `\nAttention: ${group.users.join(' ')}`;
             await sendMatrixNotification(msg);
@@ -514,7 +526,11 @@ const checkSummaries = async () => {
                 for (const alert of alertsByHost[host]) {
                     const alertName = alert.labels?.alertname || 'Unknown Alert';
                     const summary = alert.annotations?.summary || alert.annotations?.description || '';
-                    summaryMessage += `- ${alertName}${summary ? `: ${summary}` : ''}\n`;
+                    
+                    const isSilenced = alert.silencedUntil && new Date(alert.silencedUntil) > Date.now();
+                    const silenceIcon = isSilenced ? '🔇 ' : '';
+                    
+                    summaryMessage += `- ${silenceIcon}${alertName}${summary ? `: ${summary}` : ''}\n`;
                 }
                 summaryMessage += `\n`;
             }
