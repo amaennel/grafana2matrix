@@ -15,7 +15,7 @@ This project is a bridge between Grafana Alerting and Matrix. It receives webhoo
   - React to an alert message in Matrix with 🔇 (or `:mute:`) to silence the alert in Grafana for 24 hours.
   - The bot confirms the silence with a ☑️ reaction and a message.
 - **Periodic Summaries:**
-  - Sends a digest of active alerts at configurable intervals (e.g., every 2 hours for CRIT, 4 hours for WARN).
+  - Sends a digest of active alerts at specific scheduled times defined in UTC.
   - Helps keep track of long-running issues.
 
 ## Prerequisites
@@ -51,8 +51,8 @@ GRAFANA_API_KEY=your_grafana_api_key
 
 # Advanced Features
 MENTION_CONFIG_PATH=./mention-config.json
-SUMMARY_INTERVAL_CRIT_MS=7200000  # 2 hours in ms
-SUMMARY_INTERVAL_WARN_MS=14400000 # 4 hours in ms
+SUMMARY_SCHEDULE_CRIT=08:00,16:00  # UTC times
+SUMMARY_SCHEDULE_WARN=08:00        # UTC times
 ```
 
 ### Mention Configuration (`mention-config.json`)

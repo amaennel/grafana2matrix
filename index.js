@@ -19,10 +19,10 @@ const activeAlerts = new Map();
 const messageAlertMap = new Map();
 let nextBatch = null;
 
-// Track last summary times for severities
-const lastSummaryTimes = {
-    CRIT: Date.now(),
-    WARN: Date.now()
+// Track last sent schedule times (UTC minutes from midnight)
+const lastSentSchedule = {
+    CRIT: -1,
+    WARN: -1
 };
 
 app.use(express.json());
@@ -434,8 +434,6 @@ const getMentionConfig = () => {
 // Periodic Summary Logic
 const checkSummaries = async () => {
     const now = Date.now();
-    const CRIT_INTERVAL = parseInt(process.env.SUMMARY_INTERVAL_CRIT_MS) || 2 * 60 * 60 * 1000; // Default 2 hours
-    const WARN_INTERVAL = parseInt(process.env.SUMMARY_INTERVAL_WARN_MS) || 4 * 60 * 60 * 1000; // Default 4 hours
 
     const mentionConfig = getMentionConfig();
 
@@ -552,21 +550,65 @@ const checkSummaries = async () => {
         }
     };
 
-    if (now - lastSummaryTimes.CRIT >= CRIT_INTERVAL) {
-        console.log("CRIT Summary")
-        await sendSummary('CRIT');
-        lastSummaryTimes.CRIT = now;
-    } else {
-        console.log("Next CRIT Summary in", (CRIT_INTERVAL - (now - lastSummaryTimes.CRIT))/60000, "minutes");
-    }
+    const nowUtc = new Date();
+    // Calculate minutes from midnight (0-1439)
+    const currentMinutes = nowUtc.getUTCHours() * 60 + nowUtc.getUTCMinutes();
+    
+    // Helper to parse HH:mm to minutes
+    const parseTimeToMinutes = (timeStr) => {
+        if (!timeStr) return -1;
+        const [hours, minutes] = timeStr.split(':').map(Number);
+        if (isNaN(hours) || isNaN(minutes)) return -1;
+        return hours * 60 + minutes;
+    };
 
-    if (now - lastSummaryTimes.WARN >= WARN_INTERVAL) {
-        console.log("WARN Summary");
-        await sendSummary('WARN');
-        lastSummaryTimes.WARN = now;
-    } else {
-        console.log("Next CRIT Summary in", (CRIT_INTERVAL - (now - lastSummaryTimes.CRIT))/60000, "minutes");
-    }
+    const checkSchedule = async (severity, scheduleStr) => {
+        if (!scheduleStr) return;
+        
+        // Parse all scheduled times
+        const scheduledMinutes = scheduleStr.split(',')
+            .map(s => parseTimeToMinutes(s.trim()))
+            .filter(m => m >= 0).sort((a,b) => a - b);
+        
+        // Check if any schedule matches the current minute
+        // And ensure we haven't already sent for this specific minute (deduplication)
+
+        let newestPastTime = null;
+        for (const time of scheduledMinutes) {
+            if (time < currentMinutes) {
+                newestPastTime = time;
+                continue;
+            };
+            break;
+        }
+        // We are before the first trigger
+        if (newestPastTime === null) {
+            return;
+        }
+        // check if we have a date rollover 
+        // last checked time is highest possible event &&
+        // last checked time is from the day before (this is to prevent the last alarm at 18:00 clearing the lastSend and then being retriggerd)
+        if (lastSentSchedule[severity] >= scheduledMinutes.at(-1) && lastSentSchedule[severity] > currentMinutes) {
+            lastSentSchedule[severity] = -1;
+        }
+        
+        // We have already sent this summary
+        if (newestPastTime === lastSentSchedule[severity]) {
+            return;
+        }
+
+        // If we hit this code, we are actually sending a summary
+
+        const timeStr = `${Math.floor(currentMinutes / 60).toString().padStart(2, '0')}:${(currentMinutes % 60).toString().padStart(2, '0')}`;
+        console.log(`Triggering ${severity} Summary at ${timeStr} UTC (minute ${currentMinutes})`);
+        
+        await sendSummary(severity);
+        lastSentSchedule[severity] = newestPastTime;
+         
+    };
+
+    await checkSchedule('CRIT', process.env.SUMMARY_SCHEDULE_CRIT || "6:00,14:30");
+    await checkSchedule('WARN', process.env.SUMMARY_SCHEDULE_WARN || "6:00,14:30");
 };
 
 // Check every minute
