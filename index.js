@@ -282,10 +282,18 @@ app.post('/webhook', async (req, res) => {
                 const severity = (a.annotations?.severity || '').toUpperCase();
                 
                 const isFiring = a.status === 'firing';
-                const icon = isFiring ? '🚨' : '✅';
-                const statusDisplay = isFiring ? 'Firing' : 'Resolved';
-                
-                let matrixMessage = `## ${icon} ${statusDisplay}: ${alertName} (${host})\n`;
+                let icon; 
+
+                if (!isFiring) {
+                    icon = '✅';
+                }
+                else if (severity === "WARN") {
+                    icon = '⚠️';
+                } else {
+                    icon = '🚨';
+                }
+
+                let matrixMessage = `## ${icon} ${severity}: ${alertName} (${host})\n`;
                 
                 if (summary) {
                     matrixMessage += `${summary}\n`;
@@ -329,9 +337,9 @@ app.post('/webhook', async (req, res) => {
                 }
 
                 const links = [];
-                if (ruleUrl) {
-                    links.push(`[View in Grafana](${ruleUrl})`);
-                }
+                // if (ruleUrl) {
+                //     links.push(`[View in Grafana](${ruleUrl})`);
+                // }
                 
                 if (links.length > 0) {
                     matrixMessage += links.join(' | ');
