@@ -20,7 +20,7 @@ This project is a bridge between Grafana Alerting and Matrix. It receives webhoo
 
 ## Prerequisites
 
-- Node.js (v18+ recommended)
+- Node.js (v18+)
 - A Matrix account (bot user)
 - A Grafana instance (for alerts and silencing API)
 
@@ -49,11 +49,14 @@ MATRIX_ROOM_ID=!your_room_id:matrix.org
 GRAFANA_URL=https://your-grafana-instance.com
 GRAFANA_API_KEY=your_grafana_api_key
 
-# Advanced Features
+# Mention Feature
 MENTION_CONFIG_PATH=./mention-config.json
 SUMMARY_SCHEDULE_CRIT=08:00,16:00  # UTC times
 SUMMARY_SCHEDULE_WARN=08:00        # UTC times
 ```
+
+Note that the room id is not the public name of a channel. 
+To aid with the discovery of the correct room ID, the bot prints all rooms it has access to at startup.
 
 ### Mention Configuration (`mention-config.json`)
 
@@ -61,7 +64,7 @@ If you use `MENTION_CONFIG_PATH`, create a JSON file (e.g., `mention-config.json
 
 ```json
 {
-  "host-01": {
+  "host-01": { // key needs to **exactly** match host label value
     "primary": ["@user1:matrix.org"],
     "secondary": ["@user2:matrix.org"],
     "delay_crit_primary": 0,    // 0 = Immediate
@@ -97,8 +100,10 @@ On startup, the bot will log a list of joined rooms to the console, which helps 
 
 To take full advantage of the bot's features, your Grafana alerts should include the following labels:
 
-- `alertname`: (Required) The name of the alert, used as the message title.
-- `host` or `instance`: (Recommended) Used to identify the affected system. The `host` label is specifically used for matching entries in `mention-config.json`.
-- `severity`: (Recommended) Used for smart mentions and periodic summaries. The bot looks for `CRIT`/`CRITICAL` or `WARN`/`WARNING` (case-insensitive).
+- `host` or `instance`: Used to identify the affected system. The `host` label is specifically used for matching entries in `mention-config.json`.
+- `severity`: Used for smart mentions and periodic summaries. The bot looks for `CRIT`/`CRITICAL` or `WARN`/`WARNING` (case-insensitive).
 
 Annotations like `summary`, `description`, or `message` are also supported and will be included in the Matrix notification body if present.
+
+Note that Grafana sends only the labels that were used during the alert query. In case of a `severity` label,
+this should be added as an annotation to the alert (point 5 in the grafana alert UI).
