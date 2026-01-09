@@ -1,8 +1,10 @@
-require('dotenv').config();
-const express = require('express');
-const { MatrixServer } = require('./matrix');
-const { createMatrixMessage } = require('./messages');
-const { isCritical, isWarn, getMentionConfig } = require('./util');
+import dotenv from 'dotenv'
+import express from 'express';
+import { MatrixServer } from './matrix.js';
+import { createMatrixMessage } from './messages.js';
+import { isCritical, isWarn, getMentionConfig } from './util.js';
+
+dotenv.config();
 
 const app = express();
 
@@ -142,55 +144,17 @@ async function createGrafanaSilence(alertId, matrixEventId) {
     }
 }
 
-async function startMatrixSync() {
-    // Get initial next_batch
-    try {
-        if (!nextBatch) {
-            const data = await matrix.getNextBatch();
-            nextBatch = data.next_batch;
+matrix.on("reaction", async (reaction) => {
+    const {key, targetEventId} = reaction;
+
+    if (key === '🔇' || key === ':mute:') {
+        if (messageAlertMap.has(targetEventId)) {
+            const alertId = messageAlertMap.get(targetEventId);
+            console.log(`Received mute reaction for event ${targetEventId}, alert ${alertId}`);
+            await createGrafanaSilence(alertId, targetEventId);
         }
-    } catch (e) {
-        console.error("Initial sync failed", e.message);
     }
-
-    const loop = async () => {
-        try {
-            const data = await matrix.getNextBatch(30000, nextBatch || '')
-            
-            nextBatch = data.next_batch;
-            
-            // Process events
-            const rooms = data.rooms?.join || {};
-            if (rooms[MATRIX_ROOM_ID]) {
-                 const timeline = rooms[MATRIX_ROOM_ID].timeline?.events || [];
-                 for (const event of timeline) {
-                     if (event.type === 'm.reaction') {
-                         const relatesTo = event.content?.['m.relates_to'];
-                         if (relatesTo && relatesTo.rel_type === 'm.annotation') {
-                             const key = relatesTo.key; // The emoji
-                             const targetEventId = relatesTo.event_id;
-                             
-                             if (key === '🔇' || key === ':mute:') {
-                                 if (messageAlertMap.has(targetEventId)) {
-                                     const alertId = messageAlertMap.get(targetEventId);
-                                     console.log(`Received mute reaction for event ${targetEventId}, alert ${alertId}`);
-                                     await createGrafanaSilence(alertId, targetEventId);
-                                 }
-                             }
-                         }
-                     }
-                 }
-            }
-
-        } catch (error) {
-            console.error('Sync error:', error.message);
-            await new Promise(r => setTimeout(r, 5000)); // Backoff
-        }
-        setImmediate(loop);
-    };
-    
-    loop();
-}
+})
 
 app.post('/webhook', async (req, res) => {
     try {
@@ -420,5 +384,4 @@ app.use((req, res, next) => {
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
     matrix.listJoinedRooms();
-    startMatrixSync();
 });

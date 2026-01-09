@@ -1,4 +1,4 @@
-const fs = require('fs');
+import fs from 'fs';
 
 const MENTION_CONFIG_PATH = process.env.MENTION_CONFIG_PATH;
 

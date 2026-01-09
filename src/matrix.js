@@ -1,10 +1,73 @@
-class MatrixServer {
+import EventEmitter from 'node:events';
+
+class MatrixServer extends EventEmitter{
 
     constructor(homeserver, roomID, token) {
+        super()
         this.homeserver = homeserver;
         this.roomID = roomID;
         this.token = token;
+        this.nextBatch = null;
+        this.userId = null;
+        this.loop();
     }
+
+    async getUserId() {
+        try {
+            const res = await fetch(`${this.homeserver}/_matrix/client/v3/account/whoami`, {
+                headers: { 'Authorization': `Bearer ${this.token}` }
+            });
+            if (!res.ok) throw new Error(`Whoami failed: ${res.status}`);
+            const data = await res.json();
+            this.userId = data.user_id;
+        } catch (err) {
+            console.error('Failed to get user ID:', err.message);
+            throw err;
+        }
+    }
+
+    async loop () {
+        try {
+            if (!this.userId) {
+                await this.getUserId();
+            }
+
+            let data;
+            if (this.nextBatch === null) {
+                data = await this.getNextBatch();
+            } else {
+                data = await this.getNextBatch(30000, this.nextBatch || '');
+            }
+            
+            this.nextBatch = data.next_batch;
+            
+            // Process events
+            const rooms = data.rooms?.join || {};
+            if (rooms[this.roomID]) {
+                 const timeline = rooms[this.roomID].timeline?.events || [];
+                 for (const event of timeline) {
+                     if (event.type === 'm.reaction') {
+                         const relatesTo = event.content?.['m.relates_to'];
+                         if (relatesTo && relatesTo.rel_type === 'm.annotation') {
+                             const key = relatesTo.key; // The emoji
+                             const targetEventId = relatesTo.event_id;
+                             
+                            this.emit("reaction", {key: key, targetEventId: targetEventId});
+                         }
+                     } else if (event.type === 'm.room.message') {
+                        if (event.sender !== this.userId) {
+                            this.emit('userMessage', event);
+                        }
+                     }
+                 }
+            }
+
+        } catch (error) {
+            console.error('Sync error:', error.message);
+            await new Promise(r => setTimeout(r, 5000)); // Backoff
+        }
+        setImmediate(() => this.loop());
+    };
 
     async sendMatrixNotification (messageContent) {
         console.log(`Sending Matrix notification (length: ${messageContent.length})`);

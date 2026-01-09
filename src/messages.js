@@ -1,4 +1,4 @@
-import { getMentionConfig, isCritical, isWarn } from "./util";
+import { getMentionConfig, isCritical, isWarn } from "./util.js";
 
 const createMatrixMessage = (a) => {
 
