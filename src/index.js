@@ -341,7 +341,7 @@ const checkSummariesAndMentions = async () => {
                 
                 msg += `- **${alertName}** on **${host}**\n`;
             }
-            msg += `\nAttention: ${group.users.join(' ')}`;
+            msg += `\nAttention: ${group.users.map(v => `@${v}`).join(' ')}`;
             await matrix.sendMatrixNotification(msg);
         }
     }
