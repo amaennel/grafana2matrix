@@ -2,7 +2,20 @@ import dotenv from 'dotenv'
 import express from 'express';
 import { MatrixServer } from './matrix.js';
 import { createMatrixMessage } from './messages.js';
-import { isCritical, isWarn, getMentionConfig } from './util.js';
+import { isCritical, isWarn, getMentionConfig, parseTimeToMinutes } from './util.js';
+import { 
+    initDB, 
+    getAllActiveAlerts, 
+    getActiveAlert, 
+    hasActiveAlert, 
+    setActiveAlert, 
+    deleteActiveAlert, 
+    getAlertIdFromEvent, 
+    hasMessageMap, 
+    setMessageMap, 
+    getLastSentSchedule, 
+    setLastSentSchedule 
+} from './db.js';
 
 dotenv.config();
 
@@ -17,17 +30,8 @@ const GRAFANA_API_KEY = process.env.GRAFANA_API_KEY;
 const SUMMARY_SCHEDULE_CRIT = process.env.SUMMARY_SCHEDULE_CRIT;
 const SUMMARY_SCHEDULE_WARN = process.env.SUMMARY_SCHEDULE_WARN;
 
-// In-memory store for active alerts (fingerprints) -> Alert Object
-const activeAlerts = new Map();
-// Map Matrix Event ID -> Alert ID (fingerprint)
-const messageAlertMap = new Map();
+initDB();
 let nextBatch = null;
-
-// Track last sent schedule times (UTC minutes from midnight)
-const lastSentSchedule = {
-    CRIT: -1,
-    WARN: -1
-};
 
 if (!MATRIX_ACCESS_TOKEN || !MATRIX_ROOM_ID || !MATRIX_HOMESERVER_URL) {
     throw new Error("MATRIX_ACCESS_TOKEN or MATRIX_ROOM_ID or MATRIX_HOMESERVER_URL is not defined in environment variables");
@@ -45,7 +49,7 @@ const matrix = new MatrixServer(MATRIX_HOMESERVER_URL, MATRIX_ROOM_ID, MATRIX_AC
 
 const sendSummary = async (severity) => {
     const alertsForSeverity = [];
-    for (const alert of activeAlerts.values()) {
+    for (const alert of getAllActiveAlerts()) {
         const sev = (alert.annotations?.severity || 'UNKNOWN').toUpperCase();
         let matches = false;
         
@@ -98,7 +102,7 @@ const sendSummary = async (severity) => {
 };
 
 async function createGrafanaSilence(alertId, matrixEventId) {
-    const alert = activeAlerts.get(alertId);
+    const alert = getActiveAlert(alertId);
     if (!alert) {
         console.error('Alert not found for silence:', alertId);
         return;
@@ -159,8 +163,8 @@ matrix.on("reaction", async (reaction) => {
     const {key, targetEventId} = reaction;
 
     if (key === '🔇' || key === ':mute:') {
-        if (messageAlertMap.has(targetEventId)) {
-            const alertId = messageAlertMap.get(targetEventId);
+        if (hasMessageMap(targetEventId)) {
+            const alertId = getAlertIdFromEvent(targetEventId);
             console.log(`Received mute reaction for event ${targetEventId}, alert ${alertId}`);
             await createGrafanaSilence(alertId, targetEventId);
         }
@@ -204,20 +208,20 @@ app.post('/webhook', async (req, res) => {
                 const alertStatus = alert.status; // 'firing' or 'resolved'
 
                 if (alertStatus === 'firing') {
-                    if (!activeAlerts.has(id)) {
+                    if (!hasActiveAlert(id)) {
                         console.log(`New firing alert: ${id} (${alert.labels?.alertname})`);
                         alertsToNotify.push(alert);
                         alert.mentionsSent = { primary: false, secondary: false };
                     } else {
-                        const existing = activeAlerts.get(id);
+                        const existing = getActiveAlert(id);
                         alert.mentionsSent = existing.mentionsSent || { primary: false, secondary: false };
                     }
                     // Always update/add the alert to map to keep latest state
-                    activeAlerts.set(id, alert);
+                    setActiveAlert(id, alert);
                 } else if (alertStatus === 'resolved') {
-                    if (activeAlerts.has(id)) {
+                    if (hasActiveAlert(id)) {
                         console.log(`Alert resolved: ${id} (${alert.labels?.alertname})`);
-                        activeAlerts.delete(id);
+                        deleteActiveAlert(id);
                         alertsToNotify.push(alert);
                     } else {
                         alertsToNotify.push(alert);
@@ -239,7 +243,7 @@ app.post('/webhook', async (req, res) => {
                 const sentEventId = await matrix.sendMatrixNotification(matrixMessage);
                 if (sentEventId && a.status === 'firing') {
                      const id = a.fingerprint;
-                     messageAlertMap.set(sentEventId, id);
+                     setMessageMap(sentEventId, id);
                 }
             }
 
@@ -279,7 +283,8 @@ const checkSummariesAndMentions = async () => {
     const mentionConfig = getMentionConfig();
 
     const alertsNeedingMention = [];
-    for (const [id, alert] of activeAlerts.entries()) {
+    for (const alert of getAllActiveAlerts()) {
+        const id = alert.fingerprint;
         const host = alert.labels?.host || alert.labels?.instance;
         if (!host || !mentionConfig[host]) continue;
 
@@ -343,14 +348,6 @@ const checkSummariesAndMentions = async () => {
     const nowUtc = new Date();
     // Calculate minutes from midnight (0-1439)
     const currentMinutes = nowUtc.getUTCHours() * 60 + nowUtc.getUTCMinutes();
-    
-    // Helper to parse HH:mm to minutes
-    const parseTimeToMinutes = (timeStr) => {
-        if (!timeStr) return -1;
-        const [hours, minutes] = timeStr.split(':').map(Number);
-        if (isNaN(hours) || isNaN(minutes)) return -1;
-        return hours * 60 + minutes;
-    };
 
     const checkSchedule = async (severity, scheduleStr) => {
         if (!scheduleStr) return;
@@ -375,15 +372,18 @@ const checkSummariesAndMentions = async () => {
         if (newestPastTime === null) {
             return;
         }
+        
+        const lastSent = getLastSentSchedule(severity);
+
         // check if we have a date rollover 
         // last checked time is highest possible event &&
         // last checked time is from the day before (this is to prevent the last alarm at 18:00 clearing the lastSend and then being retriggerd)
-        if (lastSentSchedule[severity] >= scheduledMinutes.at(-1) && lastSentSchedule[severity] > currentMinutes) {
-            lastSentSchedule[severity] = -1;
+        if (lastSent >= scheduledMinutes.at(-1) && lastSent > currentMinutes) {
+            setLastSentSchedule(severity, -1);
         }
         
         // We have already sent this summary
-        if (newestPastTime === lastSentSchedule[severity]) {
+        if (newestPastTime === getLastSentSchedule(severity)) {
             return;
         }
 
@@ -393,8 +393,7 @@ const checkSummariesAndMentions = async () => {
         console.log(`Triggering ${severity} Summary at ${timeStr} UTC (minute ${currentMinutes})`);
         
         await sendSummary(severity);
-        lastSentSchedule[severity] = newestPastTime;
-         
+        setLastSentSchedule(severity, newestPastTime);
     };
 
     await checkSchedule('CRIT', SUMMARY_SCHEDULE_CRIT || "6:00,14:30");

@@ -17,6 +17,7 @@ This project is a bridge between Grafana Alerting and Matrix. It receives webhoo
 - **Periodic Summaries:**
   - Sends a digest of active alerts at specific scheduled times defined in UTC.
   - Helps keep track of long-running issues.
+- **Persistence:** All internal state is stored in a SQLiteDB, allowing for restarts without a flood of messages during startup.
 
 ## Prerequisites
 
