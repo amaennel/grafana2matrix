@@ -138,6 +138,7 @@ async function createGrafanaSilence(alertId, matrixEventId) {
         console.log(`Alert ${alertId} silenced successfully.`);
         
         await matrix.sendMatrixNotification(`🔇 Alert silenced for 24h: ${alert.annotations.severity} ${alert.labels.host} ${alert.labels.alertname}`);
+        deleteActiveAlert(alertId);
 
         if (matrixEventId) {
             matrix.sendReaction(matrixEventId);
