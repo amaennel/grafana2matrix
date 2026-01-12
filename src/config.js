@@ -4,8 +4,20 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-const CONFIG_FILE = 'config.json';
-const CONFIG_PATH = path.resolve(process.cwd(), CONFIG_FILE);
+// Parse command line arguments to find config file
+const args = process.argv.slice(2);
+let configFileName = 'config.json';
+
+const configArgIndex = args.indexOf('--config');
+if (configArgIndex !== -1 && args[configArgIndex + 1]) {
+    configFileName = args[configArgIndex + 1];
+    if (!fs.existsSync(path.resolve(process.cwd(), configFileName))) {
+        console.warn("Specified config file does not exist!");
+    }
+
+}
+
+const CONFIG_PATH = path.resolve(process.cwd(), configFileName);
 
 let fileConfig = {};
 
