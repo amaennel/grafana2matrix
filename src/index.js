@@ -1,4 +1,3 @@
-import dotenv from 'dotenv'
 import express from 'express';
 import { MatrixServer } from './matrix.js';
 import { createMatrixMessage } from './messages.js';
@@ -16,25 +15,14 @@ import {
     getLastSentSchedule, 
     setLastSentSchedule 
 } from './db.js';
-
-dotenv.config();
+import { config, reloadConfig } from './config.js';
 
 const app = express();
 
-const PORT = process.env.PORT || 3000;
-const MATRIX_HOMESERVER_URL = process.env.MATRIX_HOMESERVER_URL || 'https://matrix.org';
-const MATRIX_ACCESS_TOKEN = process.env.MATRIX_ACCESS_TOKEN;
-const MATRIX_ROOM_ID = process.env.MATRIX_ROOM_ID;
-const GRAFANA_URL = process.env.GRAFANA_URL;
-const GRAFANA_API_KEY = process.env.GRAFANA_API_KEY;
-const SUMMARY_SCHEDULE_CRIT = process.env.SUMMARY_SCHEDULE_CRIT;
-const SUMMARY_SCHEDULE_WARN = process.env.SUMMARY_SCHEDULE_WARN;
-
 initDB();
-let nextBatch = null;
 
-if (!MATRIX_ACCESS_TOKEN || !MATRIX_ROOM_ID || !MATRIX_HOMESERVER_URL) {
-    throw new Error("MATRIX_ACCESS_TOKEN or MATRIX_ROOM_ID or MATRIX_HOMESERVER_URL is not defined in environment variables");
+if (!config.MATRIX_ACCESS_TOKEN || !config.MATRIX_ROOM_ID || !config.MATRIX_HOMESERVER_URL) {
+    throw new Error("MATRIX_ACCESS_TOKEN or MATRIX_ROOM_ID or MATRIX_HOMESERVER_URL is not defined in environment variables or config file");
 }
 
 
@@ -45,7 +33,7 @@ app.use((req, res, next) => {
     next();
 });
 
-const matrix = new MatrixServer(MATRIX_HOMESERVER_URL, MATRIX_ROOM_ID, MATRIX_ACCESS_TOKEN);
+const matrix = new MatrixServer(config.MATRIX_HOMESERVER_URL, config.MATRIX_ROOM_ID, config.MATRIX_ACCESS_TOKEN);
 
 const sendSummary = async (severity) => {
     const alertsForSeverity = [];
@@ -108,7 +96,7 @@ async function createGrafanaSilence(alertId, matrixEventId) {
         return;
     }
 
-    if (!GRAFANA_URL || !GRAFANA_API_KEY) {
+    if (!config.GRAFANA_URL || !config.GRAFANA_API_KEY) {
         console.error('Grafana config missing, cannot silence');
         return;
     }
@@ -132,11 +120,11 @@ async function createGrafanaSilence(alertId, matrixEventId) {
     };
 
     try {
-        const response = await fetch(`${GRAFANA_URL}/api/alertmanager/grafana/api/v2/silences`, {
+        const response = await fetch(`${config.GRAFANA_URL}/api/alertmanager/grafana/api/v2/silences`, {
             method: 'POST',
             body: JSON.stringify(payload),
             headers: {
-                'Authorization': `Bearer ${GRAFANA_API_KEY}`,
+                'Authorization': `Bearer ${config.GRAFANA_API_KEY}`,
                 'Content-Type': 'application/json'
             }
         });
@@ -186,6 +174,24 @@ matrix.on("userMessage", async (event) => {
             await sendSummary(severity);
         } else {
              await matrix.sendMatrixNotification("Usage: .summary <severity> (e.g. CRITICAL, WARNING)");
+        }
+    }
+
+    if (body === ".reload-config") {
+        await matrix.sendReaction(event.event_id, '☑️');
+        try {
+            console.log("Reloading configuration...");
+            reloadConfig();
+            
+            // Update matrix server instance with new config
+            matrix.updateConfig(config.MATRIX_HOMESERVER_URL, config.MATRIX_ROOM_ID, config.MATRIX_ACCESS_TOKEN);
+
+            await matrix.sendReaction(event.event_id, '✅');
+            console.log("Configuration reloaded.");
+        } catch (error) {
+            console.error("Failed to reload config:", error);
+            await matrix.sendReaction(event.event_id, '❌');
+            await matrix.sendMatrixNotification(`Failed to reload config: ${error.message}`);
         }
     }
 });
@@ -396,14 +402,14 @@ const checkSummariesAndMentions = async () => {
         setLastSentSchedule(severity, newestPastTime);
     };
 
-    await checkSchedule('CRIT', SUMMARY_SCHEDULE_CRIT || "6:00,14:30");
-    await checkSchedule('WARN', SUMMARY_SCHEDULE_WARN || "6:00,14:30");
+    await checkSchedule('CRIT', config.SUMMARY_SCHEDULE_CRIT || "6:00,14:30");
+    await checkSchedule('WARN', config.SUMMARY_SCHEDULE_WARN || "6:00,14:30");
 };
 
 // Check every minute
 setInterval(checkSummariesAndMentions, 60 * 1000);
 
-app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+app.listen(config.PORT, () => {
+    console.log(`Server is running on port ${config.PORT}`);
     matrix.listJoinedRooms();
 });

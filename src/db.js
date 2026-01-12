@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
+import { config } from './config.js';
 
-const dbPath = process.env.DB_FILE || 'alerts.db';
+const dbPath = config.DB_FILE;
 const db = new DatabaseSync(dbPath);
 
 export function initDB() {

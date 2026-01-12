@@ -26,6 +26,26 @@ class MatrixServer extends EventEmitter{
         }
     }
 
+    updateConfig(homeserver, roomID, token) {
+        
+        if (this.roomID !== roomID) {
+            // If we switch room, we need to pull all messages.
+            this.nextBatch = null;
+            this.roomID = roomID;
+        }
+        
+        // Reset userId so it gets re-fetched with new token/server if needed
+        if (this.homeserver !== homeserver || this,token !== token) {
+
+            this.homeserver = homeserver;
+            this.token = token;
+            
+            this.userId = null; 
+        }
+
+        console.log('MatrixServer config updated');
+    }
+
     async loop () {
         try {
             if (!this.userId) {

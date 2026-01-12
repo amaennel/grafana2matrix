@@ -1,13 +1,12 @@
 import fs from 'fs';
-
-const MENTION_CONFIG_PATH = process.env.MENTION_CONFIG_PATH;
+import { config } from './config.js';
 
 // Helper to get mention config
 const getMentionConfig = () => {
-    if (!MENTION_CONFIG_PATH) return {};
+    if (!config.MENTION_CONFIG_PATH) return {};
     try {
-        if (fs.existsSync(MENTION_CONFIG_PATH)) {
-            return JSON.parse(fs.readFileSync(MENTION_CONFIG_PATH, 'utf8'));
+        if (fs.existsSync(config.MENTION_CONFIG_PATH)) {
+            return JSON.parse(fs.readFileSync(config.MENTION_CONFIG_PATH, 'utf8'));
         }
     } catch (e) {
         console.error('Error reading mention config:', e.message);
