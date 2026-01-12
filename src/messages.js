@@ -10,9 +10,10 @@ const createMatrixMessage = (a) => {
     
     const isFiring = a.status === 'firing';
     let color; 
-
+    let resolved = "";
     if (!isFiring) {
         color = '#007a00';
+        resolved = "RESOLVED ";
     }
     else if (isWarn(severity)) {
         color = '#ff9100';
@@ -20,7 +21,7 @@ const createMatrixMessage = (a) => {
         color = '#d20000';
     }
 
-    let matrixMessage = `<font color="${color}">**${severity}: ${alertName}**</font>\n`;
+    let matrixMessage = `<font color="${color}">**${resolved}${severity}: ${alertName}**</font>\n`;
     matrixMessage += `**HOST: ${host}**\n`;
 
     if (summary) {
@@ -92,8 +93,14 @@ const createPersistentAlertMessage = (alertsWithUsers) => {
     for (const item of alertsWithUsers) {
         const alertName = item.alert.labels?.alertname || 'Unknown Alert';
         const host = item.alert.labels?.host || item.alert.labels?.instance || 'Unknown Host';
-        
-        msg += `- **${alertName}** on **${host}**\n`;
+        const summary = item.alert.annotations?.summary;
+        msg += `- **${alertName}** on **${host}**`;
+        if (summary) {
+            msg += `: ${summary}\n`;
+        } else {
+            msg += '\n';
+        }
+
     }
     
     msg += `\nAttention: ${users.map(v => `@${v}`).join(' ')}`;
