@@ -80,14 +80,12 @@ class MatrixServer extends EventEmitter{
                             this.emit("reaction", {key: key, targetEventId: targetEventId});
                          }
                      } else if (event.type === 'm.room.message') {
-                        const relations = event.unsigned?.['m.relations']?.['m.annotation'];
-                        if (relations?.chunk) {
-                            const myReaction = relations.chunk.find(r => r.sender === this.userId && r.key === '☑️');
-                            if (myReaction) {
-                                continue;
-                            }
+                        const alreadyReacted = await this.hasUserReacted(event.event_id, '☑️');
+                        if (alreadyReacted) {
+                            continue;
                         }
 
+                        console.log(event)
                         if (event.sender !== this.userId) {
                             this.emit('userMessage', event);
                         }
@@ -101,6 +99,27 @@ class MatrixServer extends EventEmitter{
         }
         setImmediate(() => this.loop());
     };
+
+    async hasUserReacted(eventId, key) {
+        try {
+            const url = `${this.homeserver}/_matrix/client/v1/rooms/${encodeURIComponent(this.roomID)}/relations/${encodeURIComponent(eventId)}/m.annotation/m.reaction?limit=100`;
+            const res = await fetch(url, {
+                headers: { 'Authorization': `Bearer ${this.token}` }
+            });
+
+            if (!res.ok) {
+                return false;
+            }
+
+            const data = await res.json();
+            const chunk = data.chunk || [];
+            
+            return chunk.some(r => r.sender === this.userId && r.content?.['m.relates_to']?.key === key);
+        } catch (error) {
+            console.error(`Error checking relations for ${eventId}:`, error.message);
+            return false;
+        }
+    }
 
     async sendMatrixNotification (messageContent) {
         console.log(`Sending Matrix notification (length: ${messageContent.length})`);
