@@ -174,6 +174,7 @@ matrix.on("userMessage", async (event) => {
     } 
 
     if (body.startsWith(".summary ")) {
+        await matrix.sendReaction(event.event_id, '☑️');
         const parts = body.split(/\s+/);
         if (parts.length > 1) {
             const severity = parts[1].toUpperCase();

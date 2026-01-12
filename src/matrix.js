@@ -33,7 +33,8 @@ class MatrixServer extends EventEmitter{
             }
 
             let data;
-            if (this.nextBatch === null) {
+            const isInitialSync = this.nextBatch === null;
+            if (isInitialSync) {
                 data = await this.getNextBatch();
             } else {
                 data = await this.getNextBatch(30000, this.nextBatch || '');
@@ -46,6 +47,10 @@ class MatrixServer extends EventEmitter{
             if (rooms[this.roomID]) {
                  const timeline = rooms[this.roomID].timeline?.events || [];
                  for (const event of timeline) {
+                     if (isInitialSync && event.origin_server_ts < Date.now() - 15 * 60 * 1000) {
+                         continue;
+                     }
+
                      if (event.type === 'm.reaction') {
                          const relatesTo = event.content?.['m.relates_to'];
                          if (relatesTo && relatesTo.rel_type === 'm.annotation') {
@@ -55,6 +60,14 @@ class MatrixServer extends EventEmitter{
                             this.emit("reaction", {key: key, targetEventId: targetEventId});
                          }
                      } else if (event.type === 'm.room.message') {
+                        const relations = event.unsigned?.['m.relations']?.['m.annotation'];
+                        if (relations?.chunk) {
+                            const myReaction = relations.chunk.find(r => r.sender === this.userId && r.key === '☑️');
+                            if (myReaction) {
+                                continue;
+                            }
+                        }
+
                         if (event.sender !== this.userId) {
                             this.emit('userMessage', event);
                         }
@@ -123,7 +136,7 @@ class MatrixServer extends EventEmitter{
         return data;
     }
 
-    async sendReaction(matrixEventId) {
+    async sendReaction(matrixEventId, key = '☑️') {
          const reactionTxnId = new Date().getTime() + '_react_' + Math.random().toString(36).substring(2, 9);
             try {
                 const reactRes = await fetch(`${this.homeserver}/_matrix/client/v3/rooms/${encodeURIComponent(this.roomID)}/send/m.reaction/${reactionTxnId}`, {
@@ -132,7 +145,7 @@ class MatrixServer extends EventEmitter{
                         "m.relates_to": {
                             "rel_type": "m.annotation",
                             "event_id": matrixEventId,
-                            "key": "☑️"
+                            "key": key
                         }
                     }),
                     headers: {
