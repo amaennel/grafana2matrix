@@ -45,6 +45,12 @@ By default, the application looks for a `config.json` file in the working direct
 npm start -- --config /path/to/my-config.json
 ```
 
+or 
+
+```bash
+node src/index.js --config /path/to/my-config.json
+```
+
 ### Environment Variables / Config Keys
 
 Create a `.env` file in the root directory or use a JSON file with the following keys:
@@ -95,7 +101,7 @@ This mention config is reloaded when an alert fires and can therefore be updated
 
 ## Running the Project
 
-Start the server:
+Start the bot:
 
 ```bash
 npm start
@@ -118,7 +124,7 @@ docker run -d \
   -v $(pwd)/alerts.db:/app/alerts.db \
   -e MATRIX_ACCESS_TOKEN=your_token \
   -e MATRIX_ROOM_ID=!your_room_id:matrix.org \
-  <IMAGE_NAME>:latest
+  ghcr.io/amaennel/grafana2matrix:2.5:latest
 ```
 
 ### Docker Compose
@@ -128,7 +134,7 @@ Alternatively, use `docker-compose.yml` for a more persistent setup:
 ```yaml
 services:
   grafana-to-matrix:
-    image: <IMAGE_NAME>:latest
+    image: ghcr.io/amaennel/grafana2matrix:latest
     container_name: grafana-to-matrix
     ports:
       - "3000:3000"
