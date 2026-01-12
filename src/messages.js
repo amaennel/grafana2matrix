@@ -20,7 +20,7 @@ const createMatrixMessage = (a) => {
         color = '#d20000';
     }
 
-    let matrixMessage = `<font color="${color}">**${severity}: ${alertName}</font>\n`;
+    let matrixMessage = `<font color="${color}">**${severity}: ${alertName}**</font>\n`;
     matrixMessage += `**HOST: ${host}**\n`;
 
     if (summary) {
