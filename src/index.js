@@ -37,7 +37,7 @@ const matrix = new MatrixServer(config.MATRIX_HOMESERVER_URL, config.MATRIX_ROOM
 const sendSummary = async (severity) => {
     const alertsForSeverity = [];
     for (const alert of getAllActiveAlerts()) {
-        const sev = (alert.annotations?.severity || 'UNKNOWN').toUpperCase();
+        const sev = (alert.labels?.severity || alert.annotations?.severity || 'UNKNOWN').toUpperCase();
         let matches = false;
         
         if (isCritical(severity)) {

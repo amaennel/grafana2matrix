@@ -6,7 +6,7 @@ const createMatrixMessage = (a) => {
     const host = a.labels?.host || a.labels?.instance || 'Unknown Host';
     const summary = a.annotations?.summary || '';
     const description = a.annotations?.description || a.annotations?.message || '';
-    const severity = (a.annotations?.severity || '').toUpperCase();
+    const severity = (a.labels?.severity || a.annotations?.severity || '').toUpperCase();
     
     const isFiring = a.status === 'firing';
     let color; 
@@ -114,7 +114,7 @@ const createSummaryMessage = (severity, alertsForSeverity) => {
         summaryMessage += "No active alerts!"
         return summaryMessage;
     }
-    
+
     // Group by host
     const alertsByHost = {};
     for (const alert of alertsForSeverity) {
