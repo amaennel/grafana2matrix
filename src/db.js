@@ -28,6 +28,13 @@ export function initDB() {
     ) STRICT;
   `);
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS bot_state (
+      key TEXT PRIMARY KEY,
+      value TEXT
+    ) STRICT;
+  `);
+
   // Prepare statements once
   statements.getAllActiveAlerts = db.prepare('SELECT id, data FROM active_alerts');
   statements.getActiveAlert = db.prepare('SELECT data FROM active_alerts WHERE id = ?');
@@ -42,6 +49,9 @@ export function initDB() {
 
   statements.getLastSentSchedule = db.prepare('SELECT last_sent FROM schedules WHERE severity = ?');
   statements.setLastSentSchedule = db.prepare('INSERT OR REPLACE INTO schedules (severity, last_sent) VALUES (?, ?)');
+
+  statements.getBotState = db.prepare('SELECT value FROM bot_state WHERE key = ?');
+  statements.setBotState = db.prepare('INSERT OR REPLACE INTO bot_state (key, value) VALUES (?, ?)');
 }
 
 // Active Alerts
@@ -101,4 +111,14 @@ export function getLastSentSchedule(severity) {
 
 export function setLastSentSchedule(severity, time) {
   statements.setLastSentSchedule.run(severity, time);
+}
+
+// Bot State
+export function getBotState(key) {
+  const row = statements.getBotState.get(key);
+  return row ? String(row.value) : undefined;
+}
+
+export function setBotState(key, value) {
+  statements.setBotState.run(key, value);
 }

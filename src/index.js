@@ -12,7 +12,9 @@ import {
     getAlertIdFromEvent, 
     hasMessageMap, 
     setMessageMap,
-    deleteMessageMapByAlertId} from './db.js';
+    deleteMessageMapByAlertId,
+    getBotState,
+    setBotState} from './db.js';
 import { config, reloadConfig } from './config.js';
 import { sendGrafanaSilence } from './grafana.js';
 
@@ -99,6 +101,10 @@ matrix.on("reaction", async (reaction) => {
     }
 })
 
+matrix.on("loop", () => {
+    setBotState('last_matrix_received', new Date().toISOString());
+})
+
 matrix.on("userMessage", async (event) => {
     const body = event.content?.body;
     if (!body) {
@@ -142,6 +148,7 @@ app.post('/webhook', async (req, res) => {
         
         console.log('Received webhook:', JSON.stringify(data, null, 2));
 
+        setBotState('last_webhook_received', new Date().toISOString());
 
         // Handle Grafana Unified Alerting (Prometheus style)
         if (data.alerts && Array.isArray(data.alerts)) {
@@ -244,6 +251,35 @@ app.post('/webhook', async (req, res) => {
 
 // Periodic Summary Logic
 const checkSummariesAndMentions = async () => {
+    
+    let lastWebhook = getBotState('last_webhook_received');
+    let lastMatrix = getBotState('last_matrix_received');
+
+    if (lastWebhook) {
+        lastWebhook = new Date(lastWebhook).toLocaleString("en-GB");
+    } else {
+        lastWebhook = 'Never';
+    }
+
+    if (lastMatrix) {
+        lastMatrix = new Date(lastMatrix).toLocaleString("en-GB");
+    } else {
+        lastMatrix = 'Never';
+    }
+    const statusMessage = `Last Matrix Check: ${lastMatrix} (UTC) Last Webhook received: ${lastWebhook} (UTC)`;
+    const storedStatusId = getBotState('status_message_id');
+
+    if (storedStatusId) {
+        // Try to edit
+        await matrix.editMessage(storedStatusId, statusMessage);
+    } else {
+        // Create new
+        const newId = await matrix.sendMatrixNotification(statusMessage);
+        await matrix.sendMatrixNotification("The above message will be updated continuously. Consider pining it to the channel.")
+        if (newId) {
+            setBotState('status_message_id', newId);
+        }
+    }
 
     // Check mentions
     const messages = checkMentionMessages(getAllActiveAlerts(), "loop");

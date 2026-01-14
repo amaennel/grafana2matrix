@@ -91,6 +91,7 @@ class MatrixServer extends EventEmitter{
                      }
                  }
             }
+            this.emit('loop');
 
         } catch (error) {
             console.error('Sync error:', error.message);
@@ -130,17 +131,10 @@ class MatrixServer extends EventEmitter{
         const url = `${this.homeserver}/_matrix/client/v3/rooms/${encodeURIComponent(this.roomID)}/send/m.room.message/${txnId}`;
 
         try {
+            const body = this.formatMessageBody(messageContent);
             const response = await fetch(url, {
                 method: 'PUT',
-                body: JSON.stringify({
-                    body: messageContent,
-                    format: "org.matrix.custom.html",
-                    formatted_body: messageContent.replace(/\n/g, '<br>')
-                    .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
-                    .replace(/## (.*?)(\n|<br>)/, '<h3>$1</h3>')
-                    .replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2">$1</a>'),
-                    msgtype: "m.text"
-                }),
+                body: JSON.stringify(body),
                 headers: {
                     'Authorization': `Bearer ${this.token}`,
                     'Content-Type': 'application/json'
@@ -158,6 +152,62 @@ class MatrixServer extends EventEmitter{
             console.error('Failed to send Matrix notification:', error.message);
             return null;
         }
+    }
+
+    async editMessage(eventId, newMessageContent) {
+        console.log(`Editing Matrix message ${eventId}`);
+        if (!this.token || !this.roomID) {
+             console.error('Missing Matrix config, cannot edit message');
+             return null;
+        }
+        
+        const txnId = new Date().getTime() + '_edit_' + Math.random().toString(36).substring(2, 9);
+        const url = `${this.homeserver}/_matrix/client/v3/rooms/${encodeURIComponent(this.roomID)}/send/m.room.message/${txnId}`;
+ 
+        try {
+             const baseBody = this.formatMessageBody(newMessageContent);
+             
+             const body = {
+                 "m.new_content": baseBody,
+                 "m.relates_to": {
+                     "rel_type": "m.replace",
+                     "event_id": eventId
+                 },
+                 ...baseBody
+             };
+ 
+             const response = await fetch(url, {
+                 method: 'PUT',
+                 body: JSON.stringify(body),
+                 headers: {
+                     'Authorization': `Bearer ${this.token}`,
+                     'Content-Type': 'application/json'
+                 }
+             });
+ 
+             if (!response.ok) {
+                 throw new Error(`HTTP error! status: ${response.status}`);
+             }
+ 
+             const data = await response.json();
+             console.log(`Matrix event edited: ${data.event_id}`);
+             return data.event_id;
+        } catch (error) {
+             console.error('Failed to edit Matrix message:', error.message);
+             return null;
+        }
+     }
+
+    formatMessageBody(messageContent) {
+        return {
+            body: messageContent,
+            format: "org.matrix.custom.html",
+            formatted_body: messageContent.replace(/\n/g, '<br>')
+            .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
+            .replace(/## (.*?)(\n|<br>)/, '<h3>$1</h3>')
+            .replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2">$1</a>'),
+            msgtype: "m.text"
+        };
     }
 
     async getNextBatch(timeout = 0, since = null) {
