@@ -113,7 +113,7 @@ matrix.on("userMessage", async (event) => {
             console.log(`Received manual summary request for: ${severity}`);
             await sendSummary(severity);
         } else {
-             await matrix.sendMatrixNotification("Usage: .summary <severity> (e.g. CRITICAL, WARNING)");
+            await matrix.sendMatrixNotification("Usage: .summary <severity> (e.g. CRITICAL, WARNING)");
         }
     }
 
@@ -201,13 +201,15 @@ app.post('/webhook', async (req, res) => {
                 }
             }
 
-            // Prune zombie alerts (alerts that are in DB but not in the current webhook request)
+            // Prune zombie alerts (alerts that are in DB but not in the current webhook request, but ONLY for alertnames present in the webhook)
             const receivedAlertIds = new Set(data.alerts.map(a => a.fingerprint));
+            const receivedAlertNames = new Set(data.alerts.map(a => a.labels?.alertname).filter(Boolean));
             const activeAlerts = getAllActiveAlerts();
 
             for (const activeAlert of activeAlerts) {
-                if (!receivedAlertIds.has(activeAlert.fingerprint)) {
-                    console.log(`Pruning zombie alert: ${activeAlert.fingerprint} (${activeAlert.labels?.alertname})`);
+                const activeAlertName = activeAlert.labels?.alertname;
+                if (activeAlertName && receivedAlertNames.has(activeAlertName) && !receivedAlertIds.has(activeAlert.fingerprint)) {
+                    console.log(`Pruning zombie alert: ${activeAlert.fingerprint} (${activeAlertName})`);
                     deleteActiveAlert(activeAlert.fingerprint);
                     deleteMessageMapByAlertId(activeAlert.fingerprint);
                 }
