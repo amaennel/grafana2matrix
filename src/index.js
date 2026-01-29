@@ -38,26 +38,28 @@ const matrix = new MatrixServer(config.MATRIX_HOMESERVER_URL, config.MATRIX_ROOM
 
 const sendSummary = async (severity) => {
     const alertsForSeverity = [];
+    
+    let matcherFunc = sev => sev === severity;
+    
+    if (isCritical(severity)) {
+        matcherFunc = isCritical;
+    } else if (isWarn(severity)) {
+        matcherFunc = isWarn;
+    }
+    
     for (const alert of getAllActiveAlerts()) {
-        const sev = (alert.labels?.severity || alert.annotations?.severity || 'UNKNOWN').toUpperCase();
-        let matches = false;
-        
-        if (isCritical(severity)) {
-            matches = isCritical(sev);
-        } else if (isWarn(severity)) {
-            matches = isWarn(sev);
-        } else {
-            matches = (sev === severity);
-        }
+        const sev = (alert.labels?.severity || alert.annotations?.severity || 'UNKNOWN').toUpperCase();        
 
-        if (matches) {
+        if (matcherFunc(sev)) {
             alertsForSeverity.push(alert);
         }
     }
 
     console.log(`Sending summary for severity: ${severity}`);
-    
-    const summaryMessage = createSummaryMessage(severity, alertsForSeverity);
+
+    const silencesWithSeverity = (await fetchGrafanaSilences()).filter(e => matcherFunc(e.matchers.find(v => v.name === "severity").value));
+
+    const summaryMessage = createSummaryMessage(severity, alertsForSeverity, silencesWithSeverity);
     await matrix.sendMatrixNotification(summaryMessage);
 };
 

@@ -107,7 +107,7 @@ const createPersistentAlertMessage = (alertsWithUsers) => {
     return msg;
 };
 
-const createSummaryMessage = (severity, alertsForSeverity) => {
+const createSummaryMessage = (severity, alertsForSeverity, silences = []) => {
 
     if (alertsForSeverity.length === 0) {
         let summaryMessage = `## 📋 ${severity} Alert Summary\n`;
@@ -139,6 +139,8 @@ const createSummaryMessage = (severity, alertsForSeverity) => {
         }
         summaryMessage += `\n`;
     }
+
+    summaryMessage += `\nThere are currently ${silences.length} silenced alerts for this severity. (List them with .silences)\n`
     return summaryMessage;
 }
 
