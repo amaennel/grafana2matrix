@@ -142,4 +142,46 @@ const createSummaryMessage = (severity, alertsForSeverity) => {
     return summaryMessage;
 }
 
-export { createMatrixMessage, createPersistentAlertMessage, createSummaryMessage };
+const createSilencesMessage = (silences) => {
+    if (!silences || silences.length === 0) {
+        return "## 🔇 Active Silences\n\nNo active silences found.";
+    }
+
+    let message = `## 🔇 Active Silences (${silences.length})\n\n`;
+
+    // Sort by end time, soonest first
+    silences.sort((a, b) => {
+        const dateA = new Date(a.endsAt);
+        const dateB = new Date(b.endsAt);
+        if (isNaN(dateA.getTime())) return 1;
+        if (isNaN(dateB.getTime())) return -1;
+        return dateA - dateB;
+    });
+
+    for (const silence of silences) {
+        const start = new Date(silence.startsAt).toLocaleString("en-GB");
+        const end = new Date(silence.endsAt).toLocaleString("en-GB");
+        const createdBy = silence.createdBy || 'Unknown';
+        const comment = silence.comment || 'No comment';
+        
+        // Extract matchers to show what is silenced
+        const matchers = silence.matchers
+            .filter(m => m.name !== 'alertname') // Optional: hide alertname if redundant, but usually we want to see it
+            .map(m => `**${m.name}**: ${m.value}`)
+            .join(', ');
+        
+        // Try to find alertname specifically for better title
+        const alertnameMatcher = silence.matchers.find(m => m.name === 'alertname');
+        const alertname = alertnameMatcher ? alertnameMatcher.value : 'Global/Unknown';
+
+        message += `### ${alertname}\n`;
+        message += `- **Matchers**: ${matchers}\n`;
+        message += `- **Duration**: ${start} to ${end}\n`;
+        message += `- **Created By**: ${createdBy}\n`;
+        message += `- **Comment**: ${comment}\n\n`;
+    }
+
+    return message;
+};
+
+export { createMatrixMessage, createPersistentAlertMessage, createSummaryMessage, createSilencesMessage };
