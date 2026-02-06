@@ -36,13 +36,16 @@ function loadFileConfig() {
 }
 
 const get = (key, defaultValue) => {
-    if (process.env[key] !== undefined) {
-        return process.env[key];
-    }
-    if (fileConfig[key] !== undefined) {
-        return fileConfig[key];
-    }
-    return defaultValue;
+    const value = process.env[key] ?? fileConfig[key];
+
+    if (value === undefined) return defaultValue;
+
+    // While using env variables always produces a string, config.json can indeed contain a boolean.
+    if (typeof value === 'boolean') return value;
+
+    if (value.toLowerCase() === 'true') return true;
+    if (value.toLowerCase() === 'false') return false;
+    return value;
 };
 
 export const config = {};
@@ -58,6 +61,7 @@ export function reloadConfig() {
     config.GRAFANA_API_KEY = get('GRAFANA_API_KEY');
     config.SUMMARY_SCHEDULE_CRIT = get('SUMMARY_SCHEDULE_CRIT');
     config.SUMMARY_SCHEDULE_WARN = get('SUMMARY_SCHEDULE_WARN');
+    config.SUMMARY_SCHEDULE_SKIP_EMPTY = get('SUMMARY_SCHEDULE_SKIP_EMPTY', false);
     config.MENTION_CONFIG_PATH = get('MENTION_CONFIG_PATH');
     config.DB_FILE = get('DB_FILE', 'alerts.db');
 }

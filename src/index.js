@@ -36,7 +36,7 @@ app.use((req, res, next) => {
 
 const matrix = new MatrixServer(config.MATRIX_HOMESERVER_URL, config.MATRIX_ROOM_ID, config.MATRIX_ACCESS_TOKEN);
 
-const sendSummary = async (severity) => {
+const sendSummary = async (severity, enforceSending = false) => {
     const alertsForSeverity = [];
     
     const matcherFunc = getSeverityMatchFunction(severity);
@@ -49,12 +49,15 @@ const sendSummary = async (severity) => {
         }
     }
 
-    console.log(`Sending summary for severity: ${severity}`);
-
-    const silencesWithSeverity = (await fetchGrafanaSilences()).filter(getSilencesFilterFunction(severity));
-
-    const summaryMessage = createSummaryMessage(severity, alertsForSeverity, silencesWithSeverity);
-    await matrix.sendMatrixNotification(summaryMessage);
+    if (config.SUMMARY_SCHEDULE_SKIP_EMPTY && alertsForSeverity.length === 0 && !enforceSending) {
+        console.log(`Skipping summary for severity: ${severity}`);
+        return;
+    } else {
+        console.log(`Sending summary for severity: ${severity}`);
+        const silencesWithSeverity = (await fetchGrafanaSilences()).filter(getSilencesFilterFunction(severity));
+        const summaryMessage = createSummaryMessage(severity, alertsForSeverity, silencesWithSeverity);
+        await matrix.sendMatrixNotification(summaryMessage);
+    }
 };
 
 async function createGrafanaSilence(alertId, matrixEventId) {
@@ -113,7 +116,7 @@ matrix.on("userMessage", async (event) => {
         if (parts.length > 1) {
             const severity = parts[1].toUpperCase();
             console.log(`Received manual summary request for: ${severity}`);
-            await sendSummary(severity);
+            await sendSummary(severity, true);
         } else {
             await matrix.sendMatrixNotification("Usage: .summary <severity> (e.g. CRITICAL, WARNING)");
         }

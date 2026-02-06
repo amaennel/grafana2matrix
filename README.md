@@ -17,6 +17,7 @@ This project is a bridge between Grafana Alerting and Matrix. It receives webhoo
 - **Periodic Summaries:**
   - Sends a digest of active alerts at specific scheduled times defined in UTC.
   - Helps keep track of long-running issues.
+  - By default even summaries without active alerts are sent. This can be disabled to reduce messages.
 - **Persistence:** All internal state is stored in a SQLiteDB, allowing for restarts without a flood of messages during startup.
 
 ## Prerequisites
@@ -72,6 +73,7 @@ GRAFANA_API_KEY=your_grafana_api_key
 MENTION_CONFIG_PATH=./mention-config.json
 SUMMARY_SCHEDULE_CRIT=08:00,16:00  # UTC times
 SUMMARY_SCHEDULE_WARN=08:00        # UTC times
+SUMMARY_SCHEDULE_SKIP_EMPTY=false  # default (set to true to skip scheduled summaries without active alerts)
 
 # Storage
 DB_FILE=alerts.db

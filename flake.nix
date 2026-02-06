@@ -205,6 +205,13 @@
               description = "UTC times for warning alert summaries (comma-separated)";
             };
 
+            summaryScheduleSkipEmpty = mkOption {
+              type = types.nullOr types.bool;
+              default = null;
+              example = "true";
+              description = "Do not send empty scheduled alert summaries if true";
+            };
+
             dbFilename = mkOption {
               type = types.str;
               default = "alerts.db";
@@ -250,6 +257,8 @@
                       SUMMARY_SCHEDULE_CRIT = toString cfg.summaryScheduleCrit;
                     } // optionalAttrs (cfg.summaryScheduleWarn != null) {
                       SUMMARY_SCHEDULE_WARN = toString cfg.summaryScheduleWarn;
+                    } // optionalAttrs (cfg.summaryScheduleSkipEmpty != null) {
+                      SUMMARY_SCHEDULE_SKIP_EMPTY = cfg.summaryScheduleSkipEmpty;
                     }
                   )
                 );
