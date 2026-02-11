@@ -274,7 +274,7 @@ app.post('/webhook', async (req, res) => {
 let counter = 0;
 // Periodic Summary Logic
 const checkSummariesAndMentions = async () => {
-    if (counter === 0) {
+    if (counter === 0 && config.KEEP_ALIVE_INTERVAL !== 0) {
 
         let lastWebhook = getBotState('last_webhook_received');
         let lastMatrix = getBotState('last_matrix_received');
@@ -305,7 +305,7 @@ const checkSummariesAndMentions = async () => {
             }
         }
     }   
-    counter = (counter + 1) % 5;
+    counter = (counter + 1) % config.KEEP_ALIVE_INTERVAL;
     
     // Check mentions
     const messages = checkMentionMessages(getAllActiveAlerts(), "loop");

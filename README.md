@@ -64,6 +64,7 @@ PORT=3000
 MATRIX_HOMESERVER_URL=https://matrix.org
 MATRIX_ACCESS_TOKEN=your_matrix_access_token
 MATRIX_ROOM_ID=!your_room_id:matrix.org
+KEEP_ALIVE_INTERVAL=60            # update interval for the status message, set to 0 to disable
 
 # Grafana Configuration (Required for Silencing)
 GRAFANA_URL=https://your-grafana-instance.com
