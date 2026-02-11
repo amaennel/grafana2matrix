@@ -1,7 +1,7 @@
 import express from 'express';
 import { MatrixServer } from './matrix.js';
 import { createMatrixMessage, createSummaryMessage, createSilencesMessage } from './messages.js';
-import { isCritical, isWarn, checkMentionMessages, checkSchedule, getSilencesFilterFunction, getSeverityMatchFunction } from './util.js';
+import { isCritical, isWarn, checkMentionMessages, checkSchedule, getSilencesFilterFunction, getSeverityMatchFunction, getAlertValue } from './util.js';
 import { 
     initDB, 
     getAllActiveAlerts, 
@@ -42,7 +42,7 @@ const sendSummary = async (severity, enforceSending = false) => {
     const matcherFunc = getSeverityMatchFunction(severity);
 
     for (const alert of getAllActiveAlerts()) {
-        const sev = (alert.labels?.severity || alert.annotations?.severity || 'UNKNOWN').toUpperCase();        
+        const sev = getAlertValue(alert, "severity", "UNKNOWN").toUpperCase();        
 
         if (matcherFunc(sev)) {
             alertsForSeverity.push(alert);
@@ -70,16 +70,18 @@ async function createGrafanaSilence(alertId, matrixEventId) {
 
     const silenceResult = sendGrafanaSilence(alert, new Date());
     let reaction = '☑️';
+    const host = getAlertValue(alert, "host") ?? getAlertValue(alert, "instance") ?? "Unknown Host";
+    const severity = getAlertValue(alert, "severity", "UNKNOWN");
+
     if (silenceResult) {
         console.log(`Alert ${alertId} silenced successfully.`);
         
-        await matrix.sendMatrixNotification(`🔇 Alert silenced for 24h: ${alert.annotations.severity} ${alert.labels.host} ${alert.labels.alertname}`);
+        await matrix.sendMatrixNotification(`🔇 Alert silenced for 24h: ${severity} ${host} ${alert.labels.alertname}`);
         deleteActiveAlert(alertId);
         deleteMessageMapByAlertId(alertId);
 
-
     } else {
-        await matrix.sendMatrixNotification(`Alert could not be silenced: ${alert.annotations.severity} ${alert.labels.host} ${alert.labels.alertname}`);
+        await matrix.sendMatrixNotification(`Alert could not be silenced: ${severity} ${host} ${alert.labels.alertname}`);
         reaction = '⛔️';
     }
 

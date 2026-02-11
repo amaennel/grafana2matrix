@@ -1,12 +1,13 @@
-import { getMentionConfig, isCritical, isWarn } from "./util.js";
+import { getAlertValue, getMentionConfig, isCritical, isWarn } from "./util.js";
 
 const createMatrixMessage = (a) => {
 
     const alertName = a.labels?.alertname || 'Unknown Alert';
-    const host = a.labels?.host || a.labels?.instance || 'Unknown Host';
-    const summary = a.annotations?.summary || '';
-    const description = a.annotations?.description || a.annotations?.message || '';
-    const severity = (a.labels?.severity || a.annotations?.severity || '').toUpperCase();
+    const host = getAlertValue(a, "host") ?? getAlertValue(a, "instance") ?? "Unknown Host";
+    const severity = getAlertValue(a, "severity", "UNKNOWN").toUpperCase();
+
+    const summary = getAlertValue(a, "summary");
+    const description = getAlertValue(a, "description") || getAlertValue(a, "message") || '';
     
     const isFiring = a.status === 'firing';
     let color; 
@@ -92,8 +93,9 @@ const createPersistentAlertMessage = (alertsWithUsers) => {
     
     for (const item of alertsWithUsers) {
         const alertName = item.alert.labels?.alertname || 'Unknown Alert';
-        const host = item.alert.labels?.host || item.alert.labels?.instance || 'Unknown Host';
-        const summary = item.alert.annotations?.summary;
+        const host = getAlertValue(item.alert, "host") ?? getAlertValue(item.alert, "instance") ?? "Unknown Host";
+        const summary = getAlertValue(item.alert, "summary");
+        
         msg += `- **${alertName}** on **${host}**`;
         if (summary) {
             msg += `: ${summary}\n`;
@@ -118,7 +120,7 @@ const createSummaryMessage = (severity, alertsForSeverity, silences = []) => {
     // Group by host
     const alertsByHost = {};
     for (const alert of alertsForSeverity) {
-        const host = alert.labels?.host || alert.labels?.instance || 'Unknown Host';
+        const host = getAlertValue(alert, "host") ?? getAlertValue(alert, "instance") ?? "Unknown Host";
         if (!alertsByHost[host]) {
             alertsByHost[host] = [];
         }
@@ -133,7 +135,7 @@ const createSummaryMessage = (severity, alertsForSeverity, silences = []) => {
         summaryMessage += `**Host: ${host}**\n`;
         for (const alert of alertsByHost[host]) {
             const alertName = alert.labels?.alertname || 'Unknown Alert';
-            const summary = alert.annotations?.summary || alert.annotations?.description || '';
+            const summary = getAlertValue(alert, "summary") || getAlertValue(alert, "description") || '';
                                 
             summaryMessage += `- ${alertName}${summary ? `: ${summary}` : ''}\n`;
         }

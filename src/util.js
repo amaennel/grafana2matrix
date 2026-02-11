@@ -54,7 +54,7 @@ const isWarn  = (severity) => severity.toUpperCase() === 'WARNING' || severity.t
 
 const checkMention = (conf, alert, type, strategy) => {
 
-    const severity = (alert.labels?.severity || alert.annotations?.severity || '').toUpperCase();
+    const severity = getAlertValue(alert, "severity", "UNKNOWN").toUpperCase();
     const startsAt = new Date(alert.startsAt).getTime();
     const durationMinutes = (Date.now() - startsAt) / (1000 * 60);
 
@@ -110,7 +110,8 @@ const checkMentionMessages = (alerts, strategy) => {
     const messagesToReturn = [];
 
     for (const alert of alerts) {
-        const host = alert.labels?.host || alert.labels?.instance;
+        const host = getAlertValue(alert, "host") ?? getAlertValue(alert, "instance") ?? "Unknown Host";
+
         const id = alert.fingerprint;
 
         if (host && mentionConfig[host]) {
@@ -200,4 +201,8 @@ const getSilencesFilterFunction = (severity) => {
     return e => matcherFunc(e.matchers.find(v => v.name === "severity").value)
 }
 
-export { getMentionConfig, isCritical, isWarn, parseTimeToMinutes, sortAlertsByUsers, checkMentionMessages, checkSchedule, getSeverityMatchFunction, getSilencesFilterFunction };
+const getAlertValue = (a, label, defaultValue = undefined) => {
+    return a.labels[label] || a.annotations[label] || defaultValue;
+}
+
+export { getMentionConfig, isCritical, isWarn, parseTimeToMinutes, sortAlertsByUsers, checkMentionMessages, checkSchedule, getSeverityMatchFunction, getSilencesFilterFunction, getAlertValue };
