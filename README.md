@@ -126,9 +126,10 @@ You can run the container directly, passing configuration via environment variab
 docker run -d \
   --name grafana-to-matrix \
   -p 3000:3000 \
-  -v $(pwd)/alerts.db:/app/alerts.db \
+  -v ./config/:/app/config/ \
   -e MATRIX_ACCESS_TOKEN=your_token \
   -e MATRIX_ROOM_ID=!your_room_id:matrix.org \
+  -e DB_FILE=/app/config/alerts.db \
   ghcr.io/amaennel/grafana2matrix:latest
 ```
 
@@ -144,8 +145,13 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - ./alerts.db:/app/alerts.db
-      - ./config.json:/app/config.json:ro
+      # Mount a directory for the bot to store its state in
+      - ./config/:/app/config/
+
+      # Mount a config.json file, if you have one, to the project root
+      #- ./config.json:/app/config.json
+
+      # Mount the mention config if created
       # - ./mention-config.json:/app/mention-config.json:ro
     environment:
       - MATRIX_HOMESERVER_URL=https://matrix.org
@@ -153,6 +159,9 @@ services:
       - MATRIX_ROOM_ID=!your_room_id:matrix.org
       - GRAFANA_URL=https://your-grafana-instance.com
       - GRAFANA_API_KEY=your_grafana_api_key
+
+      # Point the bot to the mounted config directory (see above)
+      - DB_FILE=/app/config/alerts.db
     restart: unless-stopped
 ```
 
