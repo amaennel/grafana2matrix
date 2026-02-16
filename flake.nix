@@ -211,6 +211,14 @@
               example = "true";
               description = "Do not send empty scheduled alert summaries if true";
             };
+
+            additionalLabels = mkOption {
+              type = types.nullOr types.str;
+              default = null;
+              example = "label1,label2,annotation3";
+              description = "Additional labels and annotations to be included in Matrix notifications";
+            };
+
             keepAliveInterval = mkOption {
               type = types.nullOr types.int;
               default = null;
@@ -266,6 +274,8 @@
                       SUMMARY_SCHEDULE_SKIP_EMPTY = cfg.summaryScheduleSkipEmpty;
                     } // optionalAttrs (cfg.keepAliveInterval != null) {
                       KEEP_ALIVE_INTERVAL = toString cfg.keepAliveInterval;
+                    } // optionalAttrs (cfg.additionalLabels != null) {
+                      ADDITIONAL_LABELS = toString cfg.additionalLabels;
                     }
                   )
                 );

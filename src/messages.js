@@ -1,4 +1,4 @@
-import { getAlertValue, getMentionConfig, isCritical, isWarn } from "./util.js";
+import { getAlertValue, getMentionConfig, isCritical, isWarn , getAdditionalLabels } from "./util.js";
 
 const createMatrixMessage = (a) => {
 
@@ -6,6 +6,7 @@ const createMatrixMessage = (a) => {
     const host = getAlertValue(a, "host") ?? getAlertValue(a, "instance") ?? "Unknown Host";
     const severity = getAlertValue(a, "severity", "UNKNOWN").toUpperCase();
 
+    const additionalLabels = getAdditionalLabels(a);
     const summary = getAlertValue(a, "summary");
     const description = getAlertValue(a, "description") || getAlertValue(a, "message") || '';
     
@@ -24,6 +25,10 @@ const createMatrixMessage = (a) => {
 
     let matrixMessage = `<font color="${color}">**${resolved}${severity}: ${alertName}**</font>\n`;
     matrixMessage += `**HOST: ${host}**\n`;
+
+    for (const [label, value] of Object.entries(additionalLabels)) {
+        matrixMessage += `**${label}: ${value}**\n`;
+    }
 
     if (summary) {
         matrixMessage += `${summary}\n`;
@@ -136,8 +141,9 @@ const createSummaryMessage = (severity, alertsForSeverity, silences = []) => {
         for (const alert of alertsByHost[host]) {
             const alertName = alert.labels?.alertname || 'Unknown Alert';
             const summary = getAlertValue(alert, "summary") || getAlertValue(alert, "description") || '';
-                                
-            summaryMessage += `- ${alertName}${summary ? `: ${summary}` : ''}\n`;
+            const additionalLabels = Object.values(getAdditionalLabels(alert)).join(', ');;
+
+            summaryMessage += `- ${alertName}${additionalLabels ? ` (${additionalLabels})` : ''}${summary ? `: ${summary}` : ''}\n`;
         }
         summaryMessage += `\n`;
     }

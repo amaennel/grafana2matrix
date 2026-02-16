@@ -205,4 +205,18 @@ const getAlertValue = (a, label, defaultValue = undefined) => {
     return a.labels[label] || a.annotations[label] || defaultValue;
 }
 
-export { getMentionConfig, isCritical, isWarn, parseTimeToMinutes, sortAlertsByUsers, checkMentionMessages, checkSchedule, getSeverityMatchFunction, getSilencesFilterFunction, getAlertValue };
+const getAdditionalLabels = (alert) => {
+    const labels = {};
+    if (config.ADDITIONAL_LABELS) {
+        for (const label of config.ADDITIONAL_LABELS.split(',')) {
+            const value = getAlertValue(alert, label);
+            if (value) {
+                labels[label] = value;
+            }
+        }
+    }
+
+    return labels;
+};
+
+export { getMentionConfig, isCritical, isWarn, parseTimeToMinutes, sortAlertsByUsers, checkMentionMessages, checkSchedule, getSeverityMatchFunction, getSilencesFilterFunction, getAlertValue, getAdditionalLabels };

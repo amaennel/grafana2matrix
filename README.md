@@ -65,6 +65,7 @@ MATRIX_HOMESERVER_URL=https://matrix.org
 MATRIX_ACCESS_TOKEN=your_matrix_access_token
 MATRIX_ROOM_ID=!your_room_id:matrix.org
 KEEP_ALIVE_INTERVAL=60            # update interval for the status message, set to 0 to disable
+ADDITIONAL_LABELS=label1,label2,annotation3 #optional
 
 # Grafana Configuration (Required for Silencing)
 GRAFANA_URL=https://your-grafana-instance.com
@@ -200,6 +201,7 @@ To take full advantage of the bot's features, your Grafana alerts should include
 - `severity`: Used for smart mentions and periodic summaries. The bot looks for `CRIT`/`CRITICAL` or `WARN`/`WARNING` (case-insensitive).
 
 Annotations like `summary`, `description`, or `message` are also supported and will be included in the Matrix notification body if present.
+You can specify additional labels and annotations which should be shown in Matrix notifications using the option `ADDITIONAL_LABELS`.
 
 Note that Grafana sends only the labels that were used during the alert query. In case of a `severity` label,
 this should be added as an annotation to the alert (point 5 in the grafana alert UI).
