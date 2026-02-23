@@ -141,9 +141,10 @@ const createSummaryMessage = (severity, alertsForSeverity, silences = []) => {
         for (const alert of alertsByHost[host]) {
             const alertName = alert.labels?.alertname || 'Unknown Alert';
             const summary = getAlertValue(alert, "summary") || getAlertValue(alert, "description") || '';
-            const additionalLabels = Object.values(getAdditionalLabels(alert)).join(', ');;
+            const additionalLabels = Object.values(getAdditionalLabels(alert)).join(', ');
+            const alertDuration = Math.floor((new Date() - new Date(alert.startsAt)) / 3600000);
 
-            summaryMessage += `- ${alertName}${additionalLabels ? ` (${additionalLabels})` : ''}${summary ? `: ${summary}` : ''}\n`;
+            summaryMessage += `- ${alertName}${additionalLabels ? ` (${additionalLabels})` : ''}${summary ? `: ${summary}` : ''} [active for ${alertDuration === 0 ? '<1' : alertDuration}h]\n`;
         }
         summaryMessage += `\n`;
     }
