@@ -1,4 +1,9 @@
+import dayjs from 'dayjs';
 import { getAlertValue, getMentionConfig, isCritical, isWarn , getAdditionalLabels } from "./util.js";
+
+// add dayjs plugins
+import relativeTime from 'dayjs/plugin/relativeTime.js';
+dayjs.extend(relativeTime);
 
 const createMatrixMessage = (a) => {
 
@@ -142,9 +147,9 @@ const createSummaryMessage = (severity, alertsForSeverity, silences = []) => {
             const alertName = alert.labels?.alertname || 'Unknown Alert';
             const summary = getAlertValue(alert, "summary") || getAlertValue(alert, "description") || '';
             const additionalLabels = Object.values(getAdditionalLabels(alert)).join(', ');
-            const alertDuration = Math.floor((new Date() - new Date(alert.startsAt)) / 3600000);
+            const alertDuration = dayjs(alert.startsAt).fromNow(true);
 
-            summaryMessage += `- ${alertName}${additionalLabels ? ` (${additionalLabels})` : ''}${summary ? `: ${summary}` : ''} [active for ${alertDuration === 0 ? '<1' : alertDuration}h]\n`;
+            summaryMessage += `- ${alertName}${additionalLabels ? ` (${additionalLabels})` : ''}${summary ? `: ${summary}` : ''} [active for ${alertDuration}]\n`;
         }
         summaryMessage += `\n`;
     }
