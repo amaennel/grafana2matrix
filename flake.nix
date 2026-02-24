@@ -14,11 +14,11 @@
 
         grafana2matrix = pkgs.buildNpmPackage {
           pname = "grafana2matrix";
-          version = "0.1.7";
+          version = "0.1.12";
 
           src = ./.;
 
-          npmDepsHash = "sha256-yUDZJSufT7ZgJS0YwJroPutV238ppfvGBQhPQ1fzwOo=";
+          npmDepsHash = "sha256-SZ5RSBBxaIgA5+cBvkWrsFpcEUvDQCqP1UwyMSkhygI=";
 
           nativeBuildInputs = [ pkgs.makeBinaryWrapper ];
 
