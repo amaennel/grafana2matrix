@@ -13,8 +13,10 @@ import {
     hasMessageMap, 
     setMessageMap,
     deleteMessageMapByAlertId,
+    deleteAllMessageMaps,
     getBotState,
-    setBotState} from './db.js';
+    setBotState,
+    deleteBotState} from './db.js';
 import { config, reloadConfig } from './config.js';
 import { sendGrafanaSilence, fetchGrafanaSilences } from './grafana.js';
 
@@ -152,7 +154,13 @@ matrix.on("userMessage", async (event) => {
             reloadConfig();
             
             // Update matrix server instance with new config
-            matrix.updateConfig(config.MATRIX_HOMESERVER_URL, config.MATRIX_ROOM_ID, config.MATRIX_ACCESS_TOKEN);
+            const matrixUpdated = matrix.updateConfig(config.MATRIX_HOMESERVER_URL, config.MATRIX_ROOM_ID, config.MATRIX_ACCESS_TOKEN);
+
+            if (matrixUpdated) {
+                console.log("Matrix settings changed. Clearing stored Matrix message IDs.");
+                deleteAllMessageMaps();
+                deleteBotState('status_message_id');
+            }
 
             await matrix.sendReaction(event.event_id, '✅');
             console.log("Configuration reloaded.");

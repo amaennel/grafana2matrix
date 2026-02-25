@@ -46,12 +46,14 @@ export function initDB() {
   statements.hasMessageMap = db.prepare('SELECT 1 FROM message_map WHERE event_id = ?');
   statements.setMessageMap = db.prepare('INSERT OR REPLACE INTO message_map (event_id, alert_id) VALUES (?, ?)');
   statements.deleteMessageMapByAlertId = db.prepare('DELETE FROM message_map WHERE alert_id = ?');
+  statements.deleteAllMessageMaps = db.prepare('DELETE FROM message_map');
 
   statements.getLastSentSchedule = db.prepare('SELECT last_sent FROM schedules WHERE severity = ?');
   statements.setLastSentSchedule = db.prepare('INSERT OR REPLACE INTO schedules (severity, last_sent) VALUES (?, ?)');
 
   statements.getBotState = db.prepare('SELECT value FROM bot_state WHERE key = ?');
   statements.setBotState = db.prepare('INSERT OR REPLACE INTO bot_state (key, value) VALUES (?, ?)');
+  statements.deleteBotState = db.prepare('DELETE FROM bot_state WHERE key = ?');
 }
 
 // Active Alerts
@@ -103,6 +105,10 @@ export function deleteMessageMapByAlertId(alertId) {
   statements.deleteMessageMapByAlertId.run(alertId);
 }
 
+export function deleteAllMessageMaps() {
+  statements.deleteAllMessageMaps.run();
+}
+
 // Schedules
 export function getLastSentSchedule(severity) {
   const row = statements.getLastSentSchedule.get(severity);
@@ -121,4 +127,8 @@ export function getBotState(key) {
 
 export function setBotState(key, value) {
   statements.setBotState.run(key, value);
+}
+
+export function deleteBotState(key) {
+  statements.deleteBotState.run(key);
 }
