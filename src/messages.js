@@ -64,10 +64,10 @@ const createMatrixMessage = (a) => {
 
         // Check all applicable types
         if (checkImmediate('secondary')) {
-                immediateMentions.push(...config['secondary']);
+                immediateMentions.push(...config.secondary);
         } 
         if (checkImmediate('primary')) {
-                immediateMentions.push(...config['primary']);
+                immediateMentions.push(...config.primary);
         }
         
         // Deduplicate
@@ -169,8 +169,8 @@ const createSilencesMessage = (silences) => {
     silences.sort((a, b) => {
         const dateA = new Date(a.endsAt);
         const dateB = new Date(b.endsAt);
-        if (isNaN(dateA.getTime())) return 1;
-        if (isNaN(dateB.getTime())) return -1;
+        if (Number.isNaN(dateA.getTime())) return 1;
+        if (Number.isNaN(dateB.getTime())) return -1;
         return dateA.getTime() - dateB.getTime();
     });
 

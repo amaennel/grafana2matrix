@@ -31,7 +31,7 @@ if (!config.MATRIX_ACCESS_TOKEN || !config.MATRIX_ROOM_ID || !config.MATRIX_HOME
 
 app.use(express.json());
 
-app.use((req, res, next) => {
+app.use((req, _res, next) => {
     console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
     next();
 });

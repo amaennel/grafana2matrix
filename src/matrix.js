@@ -131,7 +131,7 @@ class MatrixServer extends EventEmitter{
             console.error('Missing Matrix config, cannot send notification');
             return null;
         }
-        const txnId = new Date().getTime() + '_' + Math.random().toString(36).substring(2, 9);
+        const txnId = `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
         const url = `${this.homeserver}/_matrix/client/v3/rooms/${encodeURIComponent(this.roomID)}/send/m.room.message/${txnId}`;
 
         try {
@@ -165,7 +165,7 @@ class MatrixServer extends EventEmitter{
              return null;
         }
         
-        const txnId = new Date().getTime() + '_edit_' + Math.random().toString(36).substring(2, 9);
+        const txnId = `${Date.now()}_edit_${Math.random().toString(36).substring(2, 9)}`;
         const url = `${this.homeserver}/_matrix/client/v3/rooms/${encodeURIComponent(this.roomID)}/send/m.room.message/${txnId}`;
  
         try {
@@ -229,7 +229,7 @@ class MatrixServer extends EventEmitter{
     }
 
     async sendReaction(matrixEventId, key = '☑️') {
-         const reactionTxnId = new Date().getTime() + '_react_' + Math.random().toString(36).substring(2, 9);
+         const reactionTxnId = `${Date.now()}_react_${Math.random().toString(36).substring(2, 9)}`;
             try {
                 const reactRes = await fetch(`${this.homeserver}/_matrix/client/v3/rooms/${encodeURIComponent(this.roomID)}/send/m.reaction/${reactionTxnId}`, {
                     method: 'PUT',

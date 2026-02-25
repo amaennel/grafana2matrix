@@ -1,4 +1,4 @@
-import fs from 'fs';
+import fs from 'node:fs';
 import { config } from './config.js';
 import { createPersistentAlertMessage } from './messages.js';
 import { getLastSentSchedule, setLastSentSchedule } from './db.js';
@@ -20,7 +20,7 @@ const getMentionConfig = () => {
 const parseTimeToMinutes = (timeStr) => {
     if (!timeStr) return -1;
     const [hours, minutes] = timeStr.split(':').map(Number);
-    if (isNaN(hours) || isNaN(minutes)) return -1;
+    if (Number.isNaN(hours) || Number.isNaN(minutes)) return -1;
     return hours * 60 + minutes;
 };
 
@@ -58,7 +58,7 @@ const checkMention = (conf, alert, type, strategy) => {
     const startsAt = new Date(alert.startsAt).getTime();
     const durationMinutes = (Date.now() - startsAt) / (1000 * 60);
 
-    let repeat = undefined;
+    let repeat;
     let delay = -1;
     if (isCritical(severity)) {
         repeat = conf[`repeat_crit_${type}`];
@@ -120,10 +120,10 @@ const checkMentionMessages = (alerts, strategy) => {
             let usersToMention = [];
 
             if (checkMention(conf, alert, 'secondary', strategy)) {
-                usersToMention.push(...conf['secondary']);
+                usersToMention.push(...conf.secondary);
             }
             if (checkMention(conf, alert, 'primary', strategy)) {
-                usersToMention.push(...conf['primary']);
+                usersToMention.push(...conf.primary);
             }
             
             usersToMention = [...new Set(usersToMention)];
