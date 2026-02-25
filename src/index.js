@@ -1,7 +1,7 @@
 import express from 'express';
 import { MatrixServer } from './matrix.js';
 import { createMatrixMessage, createSummaryMessage, createSilencesMessage } from './messages.js';
-import { isCritical, isWarn, checkMentionMessages, checkSchedule, getSilencesFilterFunction, getSeverityMatchFunction, getAlertValue } from './util.js';
+import { checkMentionMessages, checkSchedule, getSilencesFilterFunction, getSeverityMatchFunction, getAlertValue } from './util.js';
 import { 
     initDB, 
     getAllActiveAlerts, 
@@ -182,7 +182,6 @@ app.post('/webhook', async (req, res) => {
 
         // Handle Grafana Unified Alerting (Prometheus style)
         if (data.alerts && Array.isArray(data.alerts)) {
-            const ruleUrl = data.externalURL;
             const alertsToNotify = [];
 
             // Filter and Deduplicate

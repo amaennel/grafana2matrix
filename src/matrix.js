@@ -276,7 +276,7 @@ class MatrixServer extends EventEmitter{
                         name = nameData.name;
                     }
                 } catch (err) {
-                    // Ignore errors fetching name (e.g. 404 if not set)
+                    console.error(`Failed to fetch name for room ${roomId}:`, err.message)
                 }
                 console.log(`- ${roomId}${name ? ` (${name})` : ''}`);
             }
