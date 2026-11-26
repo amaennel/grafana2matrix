@@ -126,13 +126,7 @@ matrix.on("userMessage", async (event) => {
         return;
     }
 
-    if (body.startsWith(".subscribe") || body.startsWith(".unsubscribe") || body.startsWith(".subscriptions")) {
-        await matrix.sendReaction(event.event_id, '☑️');
-        await matrix.sendMatrixNotification(
-            `Host subscriptions are managed in a private chat. Invite me (${matrix.userId}) to a direct message and send .help there.`
-        );
-        return;
-    }
+    // Subscription commands (.subscribe etc.) in this room are handled in subscriptions.js
 
     if (body.startsWith(".summary")) {
         await matrix.sendReaction(event.event_id, '☑️');

@@ -201,8 +201,10 @@ The bot supports the following commands in the Matrix room:
 
 Instead of (or in addition to) watching the alert channel, you can get alerts for specific hosts in a private chat with the bot:
 
-1. Start a direct message with the bot user (invite it to a new room). The bot joins automatically and posts a help message.
-2. Subscribe to the hosts you care about:
+1. Send `.subscribe` (optionally followed by hosts, e.g. `.subscribe web-*`) in the alert room.
+   The bot creates an unencrypted private chat ("Alert subscriptions") and invites you. Running it again reuses that chat.
+   Alternatively, invite the bot to a room yourself; it joins automatically and posts a help message.
+2. Subscribe to the hosts you care about in the private chat:
    - **`.subscribe <host> [<host> ...]`**: Subscribe to one or more hosts. `*` works as a wildcard, e.g. `.subscribe web-* db01`.
    - **`.unsubscribe <host> [<host> ...]`**: Remove subscriptions (use the exact pattern you subscribed with).
    - **`.subscriptions`**: List the current subscriptions of this chat.
@@ -218,6 +220,12 @@ Invites from other users are rejected, and subscribers who leave the alert room 
 Set `SUBSCRIPTION_ALLOWED_USERS` to a comma-separated list of Matrix user IDs to use an explicit allowlist instead.
 
 When everyone else leaves the private chat, the bot leaves as well and deletes its subscriptions.
+
+**Encryption:** The bot does not support end-to-end encryption, and Element encrypts new direct messages by default.
+If you invite the bot to an encrypted room, it posts a notice, invites you to an unencrypted private chat instead and leaves.
+If encryption is turned on in a private chat later, the bot moves its subscriptions to a new unencrypted chat in the same way.
+In chats created by the bot only the bot may turn on encryption.
+If your homeserver enforces encryption for all new rooms (e.g. Synapse's `encryption_enabled_by_default_for_room_type`), private chats cannot be used.
 
 ## Alert Labels
 

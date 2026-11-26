@@ -99,6 +99,8 @@ class MatrixServer extends EventEmitter{
                             userId: event.state_key,
                             membership: event.content?.membership,
                         });
+                    } else if (event.type === 'm.room.encryption') {
+                        this.emit('encryptionEnabled', { roomId, sender: event.sender });
                     }
                 }
             }
@@ -294,7 +296,26 @@ class MatrixServer extends EventEmitter{
         }
     }
 
-    // Leaves a joined room or rejects a pending invite
+    // Removes a user from a room (also revokes a pending invite)
+    async kickUser(roomId, userId, reason) {
+        try {
+            const res = await fetch(`${this.homeserver}/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/kick`, {
+                method: 'POST',
+                body: JSON.stringify({ user_id: userId, reason }),
+                headers: {
+                    'Authorization': `Bearer ${this.token}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+            return true;
+        } catch (error) {
+            console.error(`Failed to kick ${userId} from ${roomId}:`, error.message);
+            return false;
+        }
+    }
+
+        // Leaves a joined room or rejects a pending invite
     async leaveRoom(roomId) {
         try {
             const res = await fetch(`${this.homeserver}/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/leave`, {
@@ -311,6 +332,65 @@ class MatrixServer extends EventEmitter{
         } catch (error) {
             console.error(`Failed to leave room ${roomId}:`, error.message);
             return false;
+        }
+    }
+
+    // Creates an unencrypted private chat with the given user and returns its room ID (or null on failure)
+    async createPrivateChat(userId, name, topic) {
+        try {
+            const res = await fetch(`${this.homeserver}/_matrix/client/v3/createRoom`, {
+                method: 'POST',
+                body: JSON.stringify({
+                    preset: 'private_chat',
+                    is_direct: true,
+                    invite: [userId],
+                    name,
+                    topic,
+                    // Only the bot may turn on encryption, which it cannot handle
+                    power_level_content_override: { events: { 'm.room.encryption': 100 } },
+                }),
+                headers: {
+                    'Authorization': `Bearer ${this.token}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+            const data = await res.json();
+            console.log(`Created private chat ${data.room_id} with ${userId}`);
+            return data.room_id;
+        } catch (error) {
+            console.error(`Failed to create private chat with ${userId}:`, error.message);
+            return null;
+        }
+    }
+
+    // Returns true/false whether a room is end-to-end encrypted, or null if that could not be determined
+    async isRoomEncrypted(roomId) {
+        try {
+            const res = await fetch(`${this.homeserver}/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/state/m.room.encryption/`, {
+                headers: { 'Authorization': `Bearer ${this.token}` }
+            });
+            if (res.status === 404) return false;
+            if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+            return true;
+        } catch (error) {
+            console.error(`Failed to check encryption of room ${roomId}:`, error.message);
+            return null;
+        }
+    }
+
+    // Returns the membership ('join', 'invite', 'leave', ...) of a user in a room, or null if unknown
+    async getMembership(roomId, userId) {
+        try {
+            const res = await fetch(`${this.homeserver}/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/state/m.room.member/${encodeURIComponent(userId)}`, {
+                headers: { 'Authorization': `Bearer ${this.token}` }
+            });
+            if (!res.ok) return null;
+            const data = await res.json();
+            return data.membership ?? null;
+        } catch (error) {
+            console.error(`Failed to fetch membership of ${userId} in ${roomId}:`, error.message);
+            return null;
         }
     }
 
