@@ -219,6 +219,13 @@
               description = "Additional labels and annotations to be included in Matrix notifications";
             };
 
+            subscriptionAllowedUsers = mkOption {
+              type = types.nullOr (types.listOf types.str);
+              default = null;
+              example = [ "@user1:matrix.org" "@user2:matrix.org" ];
+              description = "Matrix users allowed to subscribe to hosts in a private chat with the bot. If null, all members of the alert room are allowed.";
+            };
+
             keepAliveInterval = mkOption {
               type = types.nullOr types.int;
               default = null;
@@ -276,6 +283,8 @@
                       KEEP_ALIVE_INTERVAL = toString cfg.keepAliveInterval;
                     } // optionalAttrs (cfg.additionalLabels != null) {
                       ADDITIONAL_LABELS = toString cfg.additionalLabels;
+                    } // optionalAttrs (cfg.subscriptionAllowedUsers != null) {
+                      SUBSCRIPTION_ALLOWED_USERS = concatStringsSep "," cfg.subscriptionAllowedUsers;
                     }
                   )
                 );
