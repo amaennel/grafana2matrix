@@ -130,6 +130,13 @@
                         description = "Secondary users to mention";
                       };
 
+                      private = mkOption {
+                        type = types.listOf types.str;
+                        default = [ ];
+                        example = [ "@user3:matrix.org" ];
+                        description = "Users that receive all alerts of this host in a private chat with the bot";
+                      };
+
                       delay_crit_primary = mkOption {
                         type = types.int;
                         default = 0;
@@ -180,6 +187,7 @@
                 "host-01" = {
                   primary = [ "@user1:matrix.org" ];
                   secondary = [ "@user2:matrix.org" ];
+                  private = [ "@user3:matrix.org" ];
                   delay_crit_primary = 0;
                   delay_warn_primary = 60;
                   delay_crit_secondary = 60;

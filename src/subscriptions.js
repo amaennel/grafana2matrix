@@ -97,36 +97,95 @@ const subscribeHosts = (roomId, hosts, userId) => {
 };
 
 const privateChatKey = (userId) => `private_chat:${userId}`;
+// Set when a user left a private chat the bot opened on its own, so the bot does not invite them again
+const declinedKey = (userId) => `private_chat_declined:${userId}`;
 
-// The user's private chat, as long as both the bot and the user are (or are invited) in it
+// Hosts for which the mention config lists the user under "private"
+const getConfiguredHosts = (userId) =>
+    Object.entries(getMentionConfig())
+        .filter(([, conf]) => Array.isArray(conf?.private) && conf.private.includes(userId))
+        .map(([host]) => host)
+        .sort();
+
+const getConfiguredUsers = (host) => {
+    const conf = getMentionConfig()[host];
+    return Array.isArray(conf?.private) ? conf.private : [];
+};
+
+// The user's private chat: { roomId } while both the bot and the user are (or are invited) in it,
+// { gone: true } if the user or the bot left it, or null if there never was one
 const getExistingPrivateChat = async (matrix, userId) => {
     const roomId = getBotState(privateChatKey(userId));
     if (!roomId) return null;
     const membership = await matrix.getMembership(roomId, userId);
-    if (membership === 'join' || membership === 'invite') return roomId;
+    // On errors (null), assume the chat is still fine instead of opening a second one
+    if (membership === null || membership === 'join' || membership === 'invite') return { roomId };
     deleteBotState(privateChatKey(userId));
-    return null;
+    return { gone: true };
 };
 
+const pendingChats = new Map();
+// Failed attempts to open a chat on the bot's own initiative, to avoid retrying on every alert
+const failedChats = new Map();
+const FAILED_CHAT_RETRY = 60 * 60 * 1000;
+const MATRIX_USER_ID = /^@[^:\s]+:\S+$/;
+
 // Reuses or creates an unencrypted private chat with the user.
-// Returns { roomId, created } or { error } with error being 'encrypted' or 'failed'.
-const openPrivateChat = async (matrix, userId) => {
+// explicit: the user asked for the chat (as opposed to the bot opening it for configured alerts).
+// Returns { roomId, created } or { error } with error being 'encrypted', 'failed' or 'declined'.
+const openPrivateChat = (matrix, userId, { explicit = true } = {}) => {
+    // Serialize per user so concurrent alerts do not create several chats
+    const previous = pendingChats.get(userId) ?? Promise.resolve();
+    const next = previous.then(() => openPrivateChatUnsafe(matrix, userId, explicit));
+    const tracked = next.finally(() => {
+        if (pendingChats.get(userId) === tracked) pendingChats.delete(userId);
+    });
+    pendingChats.set(userId, tracked);
+    return next;
+};
+
+const openPrivateChatUnsafe = async (matrix, userId, explicit) => {
     const existing = await getExistingPrivateChat(matrix, userId);
-    if (existing) return { roomId: existing, created: false };
+    if (existing?.roomId) return { roomId: existing.roomId, created: false };
+
+    if (explicit) {
+        deleteBotState(declinedKey(userId));
+        failedChats.delete(userId);
+    } else {
+        if (existing?.gone || getBotState(declinedKey(userId))) {
+            setBotState(declinedKey(userId), new Date().toISOString());
+            return { error: 'declined' };
+        }
+        if (!MATRIX_USER_ID.test(userId)) return { error: 'invalid user ID' };
+        if (Date.now() - (failedChats.get(userId) ?? 0) < FAILED_CHAT_RETRY) return { error: 'failed recently' };
+    }
 
     const roomId = await matrix.createPrivateChat(userId, PRIVATE_CHAT_NAME, PRIVATE_CHAT_TOPIC);
-    if (!roomId) return { error: 'failed' };
+    if (!roomId) {
+        if (!explicit) failedChats.set(userId, Date.now());
+        return { error: 'failed' };
+    }
 
     if ((await matrix.isRoomEncrypted(roomId)) === true) {
         // The homeserver enforces encryption for new rooms, so the bot cannot offer a usable chat
         console.error(`Homeserver enabled encryption for new room ${roomId}, abandoning it.`);
         await matrix.kickUser(roomId, userId, 'Room was created encrypted, which the bot does not support');
         await matrix.leaveRoom(roomId);
+        if (!explicit) failedChats.set(userId, Date.now());
         return { error: 'encrypted' };
     }
 
     setBotState(privateChatKey(userId), roomId);
     await reply(matrix, roomId, HELP_MESSAGE);
+
+    const configured = getConfiguredHosts(userId);
+    if (configured.length > 0) {
+        await reply(
+            matrix,
+            roomId,
+            `The administrator has set you up to receive alerts for these hosts here:\n${listItems(configured)}`
+        );
+    }
     return { roomId, created: true };
 };
 
@@ -239,7 +298,10 @@ const handleCommand = async (matrix, event) => {
                 return;
             }
             const removed = args.filter((host) => deleteSubscription(roomId, host));
-            const notFound = args.filter((host) => !removed.includes(host));
+            const configured = getConfiguredHosts(event.sender);
+            const notFound = args
+                .filter((host) => !removed.includes(host))
+                .map((host) => (configured.includes(host) ? `${host} (set by the administrator, cannot be removed here)` : host));
             let msg = removed.length > 0 ? `✅ Unsubscribed from:\n${removed.map((h) => `- ${h}`).join('\n')}` : '';
             if (notFound.length > 0) {
                 msg += `${msg ? '\n\n' : ''}Not subscribed to:\n${notFound.map((h) => `- ${h}`).join('\n')}`;
@@ -249,17 +311,23 @@ const handleCommand = async (matrix, event) => {
         }
         case '.subscriptions': {
             const subs = getSubscriptionsForRoom(roomId);
-            if (subs.length === 0) {
+            const configured = getConfiguredHosts(event.sender);
+            if (subs.length === 0 && configured.length === 0) {
                 await reply(matrix, roomId, 'No subscriptions yet. Use .subscribe <host> to add one.');
-            } else {
-                await reply(matrix, roomId, `## 🔔 Subscriptions\n${subs.map((s) => `- ${s.host}`).join('\n')}`);
+                break;
             }
+            let msg = '## 🔔 Subscriptions\n';
+            msg += subs.length > 0 ? listItems(subs.map((s) => s.host)) : 'None (use .subscribe <host> to add one)';
+            if (configured.length > 0) {
+                msg += `\n\n**Set by the administrator**\n${listItems(configured)}`;
+            }
+            await reply(matrix, roomId, msg);
             break;
         }
         case '.hosts': {
             const activeHosts = new Set(getAllActiveAlerts().map(getAlertHost));
             const hosts = [...new Set([...activeHosts, ...Object.keys(getMentionConfig())])].sort();
-            const subs = getSubscriptionsForRoom(roomId).map((s) => s.host);
+            const subs = [...getSubscriptionsForRoom(roomId).map((s) => s.host), ...getConfiguredHosts(event.sender)];
             if (hosts.length === 0) {
                 await reply(matrix, roomId, 'No known hosts (no active alerts).');
                 return;
@@ -311,6 +379,7 @@ const setupSubscriptions = (matrix) => {
             return;
         }
         setBotState(privateChatKey(inviter), roomId);
+        deleteBotState(declinedKey(inviter));
         await reply(matrix, roomId, HELP_MESSAGE);
     });
 
@@ -361,6 +430,17 @@ const getSubscribedRooms = async (matrix, alert) => {
         // Re-check on delivery so users who left the alert room stop receiving alerts
         if (await isAllowedUser(matrix, sub.userId)) {
             rooms.add(sub.roomId);
+        }
+    }
+
+    // Users the mention config lists under "private" for this host. The config is maintained by the
+    // administrator, so these users do not need to pass isAllowedUser.
+    for (const userId of getConfiguredUsers(host)) {
+        const chat = await openPrivateChat(matrix, userId, { explicit: false });
+        if (chat.roomId && chat.roomId !== matrix.roomID) {
+            rooms.add(chat.roomId);
+        } else if (chat.error) {
+            console.log(`Not sending ${host} alert to ${userId} in private: ${chat.error}`);
         }
     }
     return rooms;

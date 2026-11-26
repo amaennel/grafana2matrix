@@ -379,13 +379,15 @@ class MatrixServer extends EventEmitter{
         }
     }
 
-    // Returns the membership ('join', 'invite', 'leave', ...) of a user in a room, or null if unknown
+    // Returns the membership ('join', 'invite', 'leave', ...) of a user in a room,
+    // 'none' if the user has no membership or the bot is not in the room, or null on other errors
     async getMembership(roomId, userId) {
         try {
             const res = await fetch(`${this.homeserver}/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/state/m.room.member/${encodeURIComponent(userId)}`, {
                 headers: { 'Authorization': `Bearer ${this.token}` }
             });
-            if (!res.ok) return null;
+            if (res.status === 403 || res.status === 404) return 'none';
+            if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
             const data = await res.json();
             return data.membership ?? null;
         } catch (error) {

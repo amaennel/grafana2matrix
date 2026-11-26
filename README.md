@@ -97,6 +97,7 @@ If you use `MENTION_CONFIG_PATH`, create a JSON file (e.g., `mention-config.json
   "host-01": { // key needs to **exactly** match host label value
     "primary": ["@user1:matrix.org"],
     "secondary": ["@user2:matrix.org"],
+    "private": ["@user3:matrix.org"], // receive all alerts of this host in a private chat (optional)
     "delay_crit_primary": 0,    // 0 = Immediate
     "delay_warn_primary": 30,   // Mention after 30 mins
     "delay_crit_secondary": 60,
@@ -108,6 +109,9 @@ If you use `MENTION_CONFIG_PATH`, create a JSON file (e.g., `mention-config.json
 ```
 
 This mention config is reloaded when an alert fires and can therefore be updated while the bot runs.
+
+Users listed under `private` get every alert of that host in a private chat with the bot, without subscribing themselves
+(see [Private Host Subscriptions](#private-host-subscriptions)).
 
 ## Running the Project
 
@@ -214,6 +218,12 @@ Instead of (or in addition to) watching the alert channel, you can get alerts fo
 The host is matched against the `host` label (or `instance`, if there is no `host` label), just like in the channel message.
 Every firing and resolved notification sent to the channel for a subscribed host is also sent to the private chat (without mentions).
 Reacting with 🔇 to an alert in the private chat silences it, just like in the channel; the confirmation is posted in both rooms.
+
+**Configured private alerts:** Hosts in the mention config can list users under `private`.
+On the first alert for such a host, the bot opens a private chat with each listed user (if there is none yet) and from then on sends that host's alerts there.
+These hosts show up in `.subscriptions` and cannot be removed with `.unsubscribe`.
+Since the mention config is maintained by the administrator, these users do not need to be members of the alert room.
+If a user rejects the invite or leaves a chat the bot opened on its own, the bot does not invite them again until they send `.subscribe` in the alert room or invite the bot themselves.
 
 **Access control:** By default only users that are members of the alert room (`MATRIX_ROOM_ID`) can use subscriptions, since they can already see all alerts.
 Invites from other users are rejected, and subscribers who leave the alert room stop receiving alerts.
