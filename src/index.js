@@ -19,6 +19,7 @@ import {
     deleteBotState} from './db.js';
 import { config, reloadConfig } from './config.js';
 import { sendGrafanaSilence, fetchGrafanaSilences } from './grafana.js';
+import { setupSubscriptions, notifySubscribers, isAllowedUser } from './subscriptions.js';
 
 const app = express();
 
@@ -37,6 +38,7 @@ app.use((req, _res, next) => {
 });
 
 const matrix = new MatrixServer(config.MATRIX_HOMESERVER_URL, config.MATRIX_ROOM_ID, config.MATRIX_ACCESS_TOKEN);
+setupSubscriptions(matrix);
 
 const sendSummary = async (severity, enforceSending = false) => {
     const alertsForSeverity = [];
@@ -62,7 +64,7 @@ const sendSummary = async (severity, enforceSending = false) => {
     }
 };
 
-async function createGrafanaSilence(alertId, matrixEventId) {
+async function createGrafanaSilence(alertId, matrixEventId, roomId = matrix.roomID) {
     const alert = getActiveAlert(alertId);
 
     if (!alert) {
@@ -70,7 +72,7 @@ async function createGrafanaSilence(alertId, matrixEventId) {
         return;
     }
 
-    const silenceResult = sendGrafanaSilence(alert, new Date());
+    const silenceResult = await sendGrafanaSilence(alert, new Date());
     let reaction = '☑️';
     const host = getAlertValue(alert, "host") ?? getAlertValue(alert, "instance") ?? "Unknown Host";
     const severity = getAlertValue(alert, "severity", "UNKNOWN");
@@ -78,28 +80,37 @@ async function createGrafanaSilence(alertId, matrixEventId) {
     if (silenceResult) {
         console.log(`Alert ${alertId} silenced successfully.`);
         
-        await matrix.sendMatrixNotification(`🔇 Alert silenced for 24h: ${severity} ${host} ${alert.labels.alertname}`);
+        const message = `🔇 Alert silenced for 24h: ${severity} ${host} ${alert.labels.alertname}`;
+        await matrix.sendMatrixNotification(message);
+        if (roomId !== matrix.roomID) {
+            await matrix.sendMatrixNotification(message, roomId);
+        }
         deleteActiveAlert(alertId);
         deleteMessageMapByAlertId(alertId);
 
     } else {
-        await matrix.sendMatrixNotification(`Alert could not be silenced: ${severity} ${host} ${alert.labels.alertname}`);
+        await matrix.sendMatrixNotification(`Alert could not be silenced: ${severity} ${host} ${alert.labels.alertname}`, roomId);
         reaction = '⛔️';
     }
 
     if (matrixEventId) {
-        matrix.sendReaction(matrixEventId, reaction);
+        matrix.sendReaction(matrixEventId, reaction, roomId);
     }
 }
 
 matrix.on("reaction", async (reaction) => {
-    const {key, targetEventId} = reaction;
+    const {key, targetEventId, roomId, sender} = reaction;
 
     if (key === '🔇' || key === ':mute:') {
         if (hasMessageMap(targetEventId)) {
+            // Outside the alert room (i.e. in private chats) only permitted users may silence alerts
+            if (roomId !== matrix.roomID && !(await isAllowedUser(matrix, sender))) {
+                console.log(`Ignoring mute reaction from ${sender} in ${roomId}: not allowed.`);
+                return;
+            }
             const alertId = getAlertIdFromEvent(targetEventId);
             console.log(`Received mute reaction for event ${targetEventId}, alert ${alertId}`);
-            await createGrafanaSilence(alertId, targetEventId);
+            await createGrafanaSilence(alertId, targetEventId, roomId);
         }
     }
 })
@@ -110,9 +121,12 @@ matrix.on("loop", () => {
 
 matrix.on("userMessage", async (event) => {
     const body = event.content?.body;
-    if (!body) {
+    // Commands in private chats are handled in subscriptions.js
+    if (!body || event.room_id !== matrix.roomID) {
         return;
-    } 
+    }
+
+    // Subscription commands (.subscribe etc.) in this room are handled in subscriptions.js
 
     if (body.startsWith(".summary")) {
         await matrix.sendReaction(event.event_id, '☑️');
@@ -235,6 +249,9 @@ app.post('/webhook', async (req, res) => {
                      const id = a.fingerprint;
                      setMessageMap(sentEventId, id);
                 }
+
+                // Forward to private chats subscribed to this host
+                await notifySubscribers(matrix, a);
             }
 
             // Prune zombie alerts (alerts that are in DB but not in the current webhook request, but ONLY for alertnames present in the webhook)

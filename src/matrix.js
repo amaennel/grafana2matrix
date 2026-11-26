@@ -66,35 +66,60 @@ class MatrixServer extends EventEmitter{
             
             this.nextBatch = data.next_batch;
             
-            // Process events
+            // Process events of all joined rooms (the alert room and private chats)
             const rooms = data.rooms?.join || {};
-            if (rooms[this.roomID]) {
-                 const timeline = rooms[this.roomID].timeline?.events || [];
-                 for (const event of timeline) {
-                     if (isInitialSync && event.origin_server_ts < Date.now() - 15 * 60 * 1000) {
-                         continue;
-                     }
+            for (const [roomId, room] of Object.entries(rooms)) {
+                const timeline = room.timeline?.events || [];
+                for (const event of timeline) {
+                    if (isInitialSync && event.origin_server_ts < Date.now() - 15 * 60 * 1000) {
+                        continue;
+                    }
+                    event.room_id = roomId;
 
-                     if (event.type === 'm.reaction') {
-                         const relatesTo = event.content?.['m.relates_to'];
-                         if (relatesTo && relatesTo.rel_type === 'm.annotation') {
-                             const key = relatesTo.key; // The emoji
-                             const targetEventId = relatesTo.event_id;
-                             
-                            this.emit("reaction", {key: key, targetEventId: targetEventId});
-                         }
-                     } else if (event.type === 'm.room.message') {
-                        const alreadyReacted = await this.hasUserReacted(event.event_id, '☑️');
+                    if (event.type === 'm.reaction') {
+                        const relatesTo = event.content?.['m.relates_to'];
+                        if (relatesTo && relatesTo.rel_type === 'm.annotation') {
+                            const key = relatesTo.key; // The emoji
+                            const targetEventId = relatesTo.event_id;
+
+                            this.emit("reaction", { key, targetEventId, roomId, sender: event.sender });
+                        }
+                    } else if (event.type === 'm.room.message') {
+                        if (event.sender === this.userId) {
+                            continue;
+                        }
+                        const alreadyReacted = await this.hasUserReacted(event.event_id, '☑️', roomId);
                         if (alreadyReacted) {
                             continue;
                         }
-
-                        if (event.sender !== this.userId) {
-                            this.emit('userMessage', event);
-                        }
-                     }
-                 }
+                        this.emit('userMessage', event);
+                    } else if (event.type === 'm.room.member' && event.state_key !== this.userId) {
+                        this.emit('memberChange', {
+                            roomId,
+                            userId: event.state_key,
+                            membership: event.content?.membership,
+                        });
+                    } else if (event.type === 'm.room.encryption') {
+                        this.emit('encryptionEnabled', { roomId, sender: event.sender });
+                    }
+                }
             }
+
+            // Rooms the bot has been invited to
+            const invites = data.rooms?.invite || {};
+            for (const [roomId, room] of Object.entries(invites)) {
+                const inviteEvent = (room.invite_state?.events || []).find(
+                    (e) => e.type === 'm.room.member' && e.state_key === this.userId && e.content?.membership === 'invite'
+                );
+                this.emit('invite', { roomId, inviter: inviteEvent?.sender });
+            }
+
+            // Rooms the bot has left or was removed from
+            const left = data.rooms?.leave || {};
+            for (const roomId of Object.keys(left)) {
+                this.emit('leave', { roomId });
+            }
+
             this.emit('loop');
 
         } catch (error) {
@@ -104,9 +129,9 @@ class MatrixServer extends EventEmitter{
         setImmediate(() => this.loop());
     };
 
-    async hasUserReacted(eventId, key) {
+    async hasUserReacted(eventId, key, roomId = this.roomID) {
         try {
-            const url = `${this.homeserver}/_matrix/client/v1/rooms/${encodeURIComponent(this.roomID)}/relations/${encodeURIComponent(eventId)}/m.annotation/m.reaction?limit=100`;
+            const url = `${this.homeserver}/_matrix/client/v1/rooms/${encodeURIComponent(roomId)}/relations/${encodeURIComponent(eventId)}/m.annotation/m.reaction?limit=100`;
             const res = await fetch(url, {
                 headers: { 'Authorization': `Bearer ${this.token}` }
             });
@@ -125,14 +150,14 @@ class MatrixServer extends EventEmitter{
         }
     }
 
-    async sendMatrixNotification (messageContent) {
-        console.log(`Sending Matrix notification (length: ${messageContent.length})`);
-        if (!this.token || !this.roomID) {
+    async sendMatrixNotification (messageContent, roomId = this.roomID) {
+        console.log(`Sending Matrix notification to ${roomId} (length: ${messageContent.length})`);
+        if (!this.token || !roomId) {
             console.error('Missing Matrix config, cannot send notification');
             return null;
         }
         const txnId = `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-        const url = `${this.homeserver}/_matrix/client/v3/rooms/${encodeURIComponent(this.roomID)}/send/m.room.message/${txnId}`;
+        const url = `${this.homeserver}/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/send/m.room.message/${txnId}`;
 
         try {
             const body = this.formatMessageBody(messageContent);
@@ -228,10 +253,10 @@ class MatrixServer extends EventEmitter{
         return data;
     }
 
-    async sendReaction(matrixEventId, key = '☑️') {
+    async sendReaction(matrixEventId, key = '☑️', roomId = this.roomID) {
          const reactionTxnId = `${Date.now()}_react_${Math.random().toString(36).substring(2, 9)}`;
             try {
-                const reactRes = await fetch(`${this.homeserver}/_matrix/client/v3/rooms/${encodeURIComponent(this.roomID)}/send/m.reaction/${reactionTxnId}`, {
+                const reactRes = await fetch(`${this.homeserver}/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/send/m.reaction/${reactionTxnId}`, {
                     method: 'PUT',
                     body: JSON.stringify({
                         "m.relates_to": {
@@ -252,6 +277,140 @@ class MatrixServer extends EventEmitter{
                 console.error('Failed to send confirmation reaction:', reactErr.message);
             }
     }
+    async joinRoom(roomId) {
+        try {
+            const res = await fetch(`${this.homeserver}/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/join`, {
+                method: 'POST',
+                body: JSON.stringify({}),
+                headers: {
+                    'Authorization': `Bearer ${this.token}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+            console.log(`Joined room ${roomId}`);
+            return true;
+        } catch (error) {
+            console.error(`Failed to join room ${roomId}:`, error.message);
+            return false;
+        }
+    }
+
+    // Removes a user from a room (also revokes a pending invite)
+    async kickUser(roomId, userId, reason) {
+        try {
+            const res = await fetch(`${this.homeserver}/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/kick`, {
+                method: 'POST',
+                body: JSON.stringify({ user_id: userId, reason }),
+                headers: {
+                    'Authorization': `Bearer ${this.token}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+            return true;
+        } catch (error) {
+            console.error(`Failed to kick ${userId} from ${roomId}:`, error.message);
+            return false;
+        }
+    }
+
+        // Leaves a joined room or rejects a pending invite
+    async leaveRoom(roomId) {
+        try {
+            const res = await fetch(`${this.homeserver}/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/leave`, {
+                method: 'POST',
+                body: JSON.stringify({}),
+                headers: {
+                    'Authorization': `Bearer ${this.token}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+            console.log(`Left room ${roomId}`);
+            return true;
+        } catch (error) {
+            console.error(`Failed to leave room ${roomId}:`, error.message);
+            return false;
+        }
+    }
+
+    // Creates an unencrypted private chat with the given user and returns its room ID (or null on failure)
+    async createPrivateChat(userId, name, topic) {
+        try {
+            const res = await fetch(`${this.homeserver}/_matrix/client/v3/createRoom`, {
+                method: 'POST',
+                body: JSON.stringify({
+                    preset: 'private_chat',
+                    is_direct: true,
+                    invite: [userId],
+                    name,
+                    topic,
+                    // Only the bot may turn on encryption, which it cannot handle
+                    power_level_content_override: { events: { 'm.room.encryption': 100 } },
+                }),
+                headers: {
+                    'Authorization': `Bearer ${this.token}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+            const data = await res.json();
+            console.log(`Created private chat ${data.room_id} with ${userId}`);
+            return data.room_id;
+        } catch (error) {
+            console.error(`Failed to create private chat with ${userId}:`, error.message);
+            return null;
+        }
+    }
+
+    // Returns true/false whether a room is end-to-end encrypted, or null if that could not be determined
+    async isRoomEncrypted(roomId) {
+        try {
+            const res = await fetch(`${this.homeserver}/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/state/m.room.encryption/`, {
+                headers: { 'Authorization': `Bearer ${this.token}` }
+            });
+            if (res.status === 404) return false;
+            if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+            return true;
+        } catch (error) {
+            console.error(`Failed to check encryption of room ${roomId}:`, error.message);
+            return null;
+        }
+    }
+
+    // Returns the membership ('join', 'invite', 'leave', ...) of a user in a room,
+    // 'none' if the user has no membership or the bot is not in the room, or null on other errors
+    async getMembership(roomId, userId) {
+        try {
+            const res = await fetch(`${this.homeserver}/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/state/m.room.member/${encodeURIComponent(userId)}`, {
+                headers: { 'Authorization': `Bearer ${this.token}` }
+            });
+            if (res.status === 403 || res.status === 404) return 'none';
+            if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+            const data = await res.json();
+            return data.membership ?? null;
+        } catch (error) {
+            console.error(`Failed to fetch membership of ${userId} in ${roomId}:`, error.message);
+            return null;
+        }
+    }
+
+    // Returns the user IDs of all joined members of a room, or null on failure
+    async getJoinedMembers(roomId) {
+        try {
+            const res = await fetch(`${this.homeserver}/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/joined_members`, {
+                headers: { 'Authorization': `Bearer ${this.token}` }
+            });
+            if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+            const data = await res.json();
+            return Object.keys(data.joined || {});
+        } catch (error) {
+            console.error(`Failed to fetch members of room ${roomId}:`, error.message);
+            return null;
+        }
+    }
+
     async listJoinedRooms() {
 
         console.log('Fetching joined rooms...');

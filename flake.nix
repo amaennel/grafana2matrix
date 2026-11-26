@@ -130,6 +130,13 @@
                         description = "Secondary users to mention";
                       };
 
+                      private = mkOption {
+                        type = types.listOf types.str;
+                        default = [ ];
+                        example = [ "@user3:matrix.org" ];
+                        description = "Users that receive all alerts of this host in a private chat with the bot";
+                      };
+
                       delay_crit_primary = mkOption {
                         type = types.int;
                         default = 0;
@@ -180,6 +187,7 @@
                 "host-01" = {
                   primary = [ "@user1:matrix.org" ];
                   secondary = [ "@user2:matrix.org" ];
+                  private = [ "@user3:matrix.org" ];
                   delay_crit_primary = 0;
                   delay_warn_primary = 60;
                   delay_crit_secondary = 60;
@@ -217,6 +225,13 @@
               default = null;
               example = "label1,label2,annotation3";
               description = "Additional labels and annotations to be included in Matrix notifications";
+            };
+
+            subscriptionAllowedUsers = mkOption {
+              type = types.nullOr (types.listOf types.str);
+              default = null;
+              example = [ "@user1:matrix.org" "@user2:matrix.org" ];
+              description = "Matrix users allowed to subscribe to hosts in a private chat with the bot. If null, all members of the alert room are allowed.";
             };
 
             keepAliveInterval = mkOption {
@@ -276,6 +291,8 @@
                       KEEP_ALIVE_INTERVAL = toString cfg.keepAliveInterval;
                     } // optionalAttrs (cfg.additionalLabels != null) {
                       ADDITIONAL_LABELS = toString cfg.additionalLabels;
+                    } // optionalAttrs (cfg.subscriptionAllowedUsers != null) {
+                      SUBSCRIPTION_ALLOWED_USERS = concatStringsSep "," cfg.subscriptionAllowedUsers;
                     }
                   )
                 );

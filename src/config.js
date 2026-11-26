@@ -66,6 +66,7 @@ export function reloadConfig() {
     config.DB_FILE = get('DB_FILE', 'alerts.db');
     config.KEEP_ALIVE_INTERVAL = get('KEEP_ALIVE_INTERVAL', 60);
     config.ADDITIONAL_LABELS = get('ADDITIONAL_LABELS');
+    config.SUBSCRIPTION_ALLOWED_USERS = get('SUBSCRIPTION_ALLOWED_USERS');
 }
 
 // Initial load
