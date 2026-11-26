@@ -103,6 +103,7 @@ const checkMention = (conf, alert, type, strategy) => {
     return false;
 };
 
+// Returns a list of { message, alertIds } for persistent alert notifications that should be sent
 const checkMentionMessages = (alerts, strategy) => {
 
     const mentionConfig = getMentionConfig();
@@ -139,8 +140,11 @@ const checkMentionMessages = (alerts, strategy) => {
         const groups = sortAlertsByUsers(mentions);
 
         for (const key in groups) {
-            const msg = createPersistentAlertMessage(groups[key].alerts);
-            messagesToReturn.push(msg);
+            const groupAlerts = groups[key].alerts;
+            const message = createPersistentAlertMessage(groupAlerts);
+            // Alert ids in the order they are listed in the message (position = index + 1)
+            const alertIds = groupAlerts.map(item => item.id);
+            messagesToReturn.push({ message, alertIds });
         }
     }
     return messagesToReturn;

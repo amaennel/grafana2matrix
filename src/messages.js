@@ -5,6 +5,17 @@ import { getAlertValue, getMentionConfig, isCritical, isWarn , getAdditionalLabe
 import relativeTime from 'dayjs/plugin/relativeTime.js';
 dayjs.extend(relativeTime);
 
+// Keycap emojis used to number alerts in grouped messages. Reacting with one silences the matching alert.
+const NUMBER_EMOJIS = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
+
+// Returns the 1-based position for a number emoji reaction key, or undefined if the key is not one.
+// Variation selectors are ignored, since clients differ in whether they send them.
+const getPositionFromReactionKey = (key) => {
+    const normalize = (k) => k.replace(/\uFE0F/g, '');
+    const index = NUMBER_EMOJIS.findIndex(e => normalize(e) === normalize(key));
+    return index === -1 ? undefined : index + 1;
+};
+
 const createMatrixMessage = (a) => {
 
     const alertName = a.labels?.alertname || 'Unknown Alert';
@@ -101,21 +112,29 @@ const createPersistentAlertMessage = (alertsWithUsers) => {
     let msg = `## ⚠️ Persistent Alert Notification\n\n`;
     msg += `The following alerts have been active for a significant time:\n\n`;
     
-    for (const item of alertsWithUsers) {
+    const numbered = alertsWithUsers.length > 1;
+
+    alertsWithUsers.forEach((item, index) => {
         const alertName = item.alert.labels?.alertname || 'Unknown Alert';
         const host = getAlertValue(item.alert, "host") ?? getAlertValue(item.alert, "instance") ?? "Unknown Host";
         const summary = getAlertValue(item.alert, "summary");
-        
-        msg += `- **${alertName}** on **${host}**`;
+
+        const prefix = numbered && index < NUMBER_EMOJIS.length ? NUMBER_EMOJIS[index] : '-';
+        msg += `${prefix} **${alertName}** on **${host}**`;
         if (summary) {
             msg += `: ${summary}\n`;
         } else {
             msg += '\n';
         }
+    });
 
+    msg += `\nAttention: ${users.map(v => `@${v}`).join(' ')}\n`;
+
+    if (numbered) {
+        msg += `\nReact with 🔇 to silence all listed alerts for 24h, or with an alert's number to silence only that one.`;
+    } else {
+        msg += `\nReact with 🔇 to silence this alert for 24h.`;
     }
-    
-    msg += `\nAttention: ${users.map(v => `@${v}`).join(' ')}`;
     return msg;
 };
 
@@ -200,4 +219,4 @@ const createSilencesMessage = (silences) => {
     return message;
 };
 
-export { createMatrixMessage, createPersistentAlertMessage, createSummaryMessage, createSilencesMessage };
+export { NUMBER_EMOJIS, getPositionFromReactionKey, createMatrixMessage, createPersistentAlertMessage, createSummaryMessage, createSilencesMessage };

@@ -1,6 +1,6 @@
 import express from 'express';
 import { MatrixServer } from './matrix.js';
-import { createMatrixMessage, createSummaryMessage, createSilencesMessage } from './messages.js';
+import { createMatrixMessage, createSummaryMessage, createSilencesMessage, getPositionFromReactionKey } from './messages.js';
 import { checkMentionMessages, checkSchedule, getSilencesFilterFunction, getSeverityMatchFunction, getAlertValue } from './util.js';
 import { 
     initDB, 
@@ -9,7 +9,8 @@ import {
     hasActiveAlert, 
     setActiveAlert, 
     deleteActiveAlert, 
-    getAlertIdFromEvent, 
+    getAlertIdsFromEvent,
+    getAlertIdFromEventPosition,
     hasMessageMap, 
     setMessageMap,
     deleteMessageMapByAlertId,
@@ -62,47 +63,87 @@ const sendSummary = async (severity, enforceSending = false) => {
     }
 };
 
-async function createGrafanaSilence(alertId, matrixEventId) {
+// Sends persistent alert notifications and remembers which alerts they reference, so they can be muted via reactions
+async function sendPersistentAlertNotifications(notifications) {
+    for (const { message, alertIds } of notifications) {
+        const sentEventId = await matrix.sendMatrixNotification(message);
+        if (sentEventId) {
+            alertIds.forEach((alertId, index) => {
+                setMessageMap(sentEventId, alertId, index + 1);
+            });
+        }
+    }
+}
+
+// Silences the given alert in Grafana and reports the result in Matrix. Returns true on success.
+async function createGrafanaSilence(alertId) {
     const alert = getActiveAlert(alertId);
 
     if (!alert) {
         console.error('Alert not found for silence:', alertId);
-        return;
+        return false;
     }
 
-    const silenceResult = sendGrafanaSilence(alert, new Date());
-    let reaction = '☑️';
+    const silenceResult = await sendGrafanaSilence(alert, new Date());
     const host = getAlertValue(alert, "host") ?? getAlertValue(alert, "instance") ?? "Unknown Host";
     const severity = getAlertValue(alert, "severity", "UNKNOWN");
 
     if (silenceResult) {
         console.log(`Alert ${alertId} silenced successfully.`);
-        
+
         await matrix.sendMatrixNotification(`🔇 Alert silenced for 24h: ${severity} ${host} ${alert.labels.alertname}`);
         deleteActiveAlert(alertId);
         deleteMessageMapByAlertId(alertId);
-
-    } else {
-        await matrix.sendMatrixNotification(`Alert could not be silenced: ${severity} ${host} ${alert.labels.alertname}`);
-        reaction = '⛔️';
+        return true;
     }
 
-    if (matrixEventId) {
-        matrix.sendReaction(matrixEventId, reaction);
-    }
+    await matrix.sendMatrixNotification(`Alert could not be silenced: ${severity} ${host} ${alert.labels.alertname}`);
+    return false;
 }
 
 matrix.on("reaction", async (reaction) => {
-    const {key, targetEventId} = reaction;
+    const { key, targetEventId } = reaction;
+
+    if (!hasMessageMap(targetEventId)) {
+        return;
+    }
+
+    let alertIds = [];
 
     if (key === '🔇' || key === ':mute:') {
-        if (hasMessageMap(targetEventId)) {
-            const alertId = getAlertIdFromEvent(targetEventId);
-            console.log(`Received mute reaction for event ${targetEventId}, alert ${alertId}`);
-            await createGrafanaSilence(alertId, targetEventId);
+        // Silence every alert referenced by the message (a single one for initial alert messages,
+        // possibly several for persistent alert notifications)
+        alertIds = getAlertIdsFromEvent(targetEventId);
+    } else {
+        // Number reactions silence a single alert of a persistent alert notification
+        const position = getPositionFromReactionKey(key);
+        if (position === undefined) {
+            return;
+        }
+        const alertId = getAlertIdFromEventPosition(targetEventId, position);
+        if (alertId) {
+            alertIds = [alertId];
         }
     }
-})
+
+    if (alertIds.length === 0) {
+        return;
+    }
+
+    console.log(`Received mute reaction ${key} for event ${targetEventId}, alerts ${alertIds.join(', ')}`);
+
+    let allSucceeded = true;
+    for (const alertId of alertIds) {
+        const success = await createGrafanaSilence(alertId);
+        allSucceeded = allSucceeded && success;
+    }
+
+    // Several alerts of one message may be muted one by one, so avoid duplicate confirmation reactions
+    const confirmation = allSucceeded ? '☑️' : '⛔️';
+    if (!(await matrix.hasUserReacted(targetEventId, confirmation))) {
+        await matrix.sendReaction(targetEventId, confirmation);
+    }
+});
 
 matrix.on("loop", () => {
     setBotState('last_matrix_received', new Date().toISOString());
@@ -216,11 +257,7 @@ app.post('/webhook', async (req, res) => {
             if (alertsToNotify.length === 0) {
                 console.log('No state changes detected (all alerts are duplicates). Skipping individual Matrix notification.');
 
-                const messages = checkMentionMessages(data.alerts, "webhook");
-
-                for (const msg of messages) {
-                    await matrix.sendMatrixNotification(msg);
-                }
+                await sendPersistentAlertNotifications(checkMentionMessages(data.alerts, "webhook"));
 
                 return res.status(200).send('Processed');
             }
@@ -315,11 +352,7 @@ const checkSummariesAndMentions = async () => {
     counter = (counter + 1) % config.KEEP_ALIVE_INTERVAL;
     
     // Check mentions
-    const messages = checkMentionMessages(getAllActiveAlerts(), "loop");
-
-     for (const msg of messages) {
-        await matrix.sendMatrixNotification(msg);
-    }
+    await sendPersistentAlertNotifications(checkMentionMessages(getAllActiveAlerts(), "loop"));
 
     const sendCrit = await checkSchedule('CRIT', config.SUMMARY_SCHEDULE_CRIT || "6:00,14:30");
     const sendWarn = await checkSchedule('WARN', config.SUMMARY_SCHEDULE_WARN || "6:00,14:30");

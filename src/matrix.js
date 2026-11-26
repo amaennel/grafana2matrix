@@ -81,7 +81,10 @@ class MatrixServer extends EventEmitter{
                              const key = relatesTo.key; // The emoji
                              const targetEventId = relatesTo.event_id;
                              
-                            this.emit("reaction", {key: key, targetEventId: targetEventId});
+                             // Ignore the bot's own (confirmation) reactions
+                             if (event.sender !== this.userId) {
+                                 this.emit("reaction", { key: key, targetEventId: targetEventId, sender: event.sender });
+                             }
                          }
                      } else if (event.type === 'm.room.message') {
                         const alreadyReacted = await this.hasUserReacted(event.event_id, '☑️');

@@ -14,12 +14,29 @@ export function initDB() {
     ) STRICT;
   `);
 
+  // Maps Matrix events to alerts. A single event can reference multiple alerts
+  // (e.g. persistent alert notifications), each with its position in the message.
   db.exec(`
-    CREATE TABLE IF NOT EXISTS message_map (
-      event_id TEXT PRIMARY KEY,
-      alert_id TEXT
+    CREATE TABLE IF NOT EXISTS message_alerts (
+      event_id TEXT NOT NULL,
+      alert_id TEXT NOT NULL,
+      position INTEGER NOT NULL DEFAULT 1,
+      PRIMARY KEY (event_id, alert_id)
     ) STRICT;
   `);
+
+  // Migrate the legacy single-alert message_map table, if present
+  const legacyTable = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'message_map'").get();
+  if (legacyTable) {
+    db.exec(`
+      BEGIN;
+      INSERT OR IGNORE INTO message_alerts (event_id, alert_id, position)
+        SELECT event_id, alert_id, 1 FROM message_map WHERE alert_id IS NOT NULL;
+      DROP TABLE message_map;
+      COMMIT;
+    `);
+    console.log('Migrated message_map table to message_alerts');
+  }
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS schedules (
@@ -42,11 +59,18 @@ export function initDB() {
   statements.setActiveAlert = db.prepare('INSERT OR REPLACE INTO active_alerts (id, data) VALUES (?, ?)');
   statements.deleteActiveAlert = db.prepare('DELETE FROM active_alerts WHERE id = ?');
 
-  statements.getAlertIdFromEvent = db.prepare('SELECT alert_id FROM message_map WHERE event_id = ?');
-  statements.hasMessageMap = db.prepare('SELECT 1 FROM message_map WHERE event_id = ?');
-  statements.setMessageMap = db.prepare('INSERT OR REPLACE INTO message_map (event_id, alert_id) VALUES (?, ?)');
-  statements.deleteMessageMapByAlertId = db.prepare('DELETE FROM message_map WHERE alert_id = ?');
-  statements.deleteAllMessageMaps = db.prepare('DELETE FROM message_map');
+  statements.getAlertIdsFromEvent = db.prepare(
+    'SELECT alert_id FROM message_alerts WHERE event_id = ? ORDER BY position'
+  );
+  statements.getAlertIdFromEventPosition = db.prepare(
+    'SELECT alert_id FROM message_alerts WHERE event_id = ? AND position = ?'
+  );
+  statements.hasMessageMap = db.prepare('SELECT 1 FROM message_alerts WHERE event_id = ?');
+  statements.setMessageMap = db.prepare(
+    'INSERT OR REPLACE INTO message_alerts (event_id, alert_id, position) VALUES (?, ?, ?)'
+  );
+  statements.deleteMessageMapByAlertId = db.prepare('DELETE FROM message_alerts WHERE alert_id = ?');
+  statements.deleteAllMessageMaps = db.prepare('DELETE FROM message_alerts');
 
   statements.getLastSentSchedule = db.prepare('SELECT last_sent FROM schedules WHERE severity = ?');
   statements.setLastSentSchedule = db.prepare('INSERT OR REPLACE INTO schedules (severity, last_sent) VALUES (?, ?)');
@@ -87,8 +111,12 @@ export function deleteActiveAlert(id) {
 }
 
 // Message Map
-export function getAlertIdFromEvent(eventId) {
-  const row = statements.getAlertIdFromEvent.get(eventId);
+export function getAlertIdsFromEvent(eventId) {
+  return statements.getAlertIdsFromEvent.all(eventId).map(row => String(row.alert_id));
+}
+
+export function getAlertIdFromEventPosition(eventId, position) {
+  const row = statements.getAlertIdFromEventPosition.get(eventId, position);
   return row ? String(row.alert_id) : undefined;
 }
 
@@ -97,8 +125,8 @@ export function hasMessageMap(eventId) {
     return !!row;
 }
 
-export function setMessageMap(eventId, alertId) {
-  statements.setMessageMap.run(eventId, alertId);
+export function setMessageMap(eventId, alertId, position = 1) {
+  statements.setMessageMap.run(eventId, alertId, position);
 }
 
 export function deleteMessageMapByAlertId(alertId) {
