@@ -13,6 +13,7 @@ This project is a bridge between Grafana Alerting and Matrix. It receives webhoo
   - Can delay mentions (e.g., only mention if active for X minutes) or mention immediately.
 - **Interactive Silencing:**
   - React to an alert message in Matrix with 🔇 (or `:mute:`) to silence the alert in Grafana for 24 hours.
+  - This also works on persistent alert notifications: 🔇 silences all alerts listed in the notification. If it lists several alerts, they are numbered and reacting with a number (1️⃣, 2️⃣, ...) silences only that alert.
   - The bot confirms the silence with a ☑️ reaction and a message.
 - **Periodic Summaries:**
   - Sends a digest of active alerts at specific scheduled times defined in UTC.
@@ -180,6 +181,7 @@ docker-compose up -d
    - When an alert fires, you will see a message in the Matrix room.
 3. **Silence Alerts:**
    - React to the alert message with the 🔇 emoji.
+   - Alternatively, react to a persistent alert notification with 🔇 to silence all alerts it lists, or with an alert's number (1️⃣, 2️⃣, ...) to silence just that one.
    - The bot will call the Grafana API to create a silence and confirm in the chat.
 
 ## Chat Commands
