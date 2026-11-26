@@ -5,7 +5,7 @@ import { getAlertValue, getMentionConfig, isCritical, isWarn , getAdditionalLabe
 import relativeTime from 'dayjs/plugin/relativeTime.js';
 dayjs.extend(relativeTime);
 
-const createMatrixMessage = (a) => {
+const createMatrixMessage = (a, { mentions = true } = {}) => {
 
     const alertName = a.labels?.alertname || 'Unknown Alert';
     const host = getAlertValue(a, "host") ?? getAlertValue(a, "instance") ?? "Unknown Host";
@@ -46,7 +46,7 @@ const createMatrixMessage = (a) => {
     const mentionConfig = getMentionConfig();
 
     // Check for immediate mentions
-    if (isFiring && mentionConfig[host]) {
+    if (mentions && isFiring && mentionConfig[host]) {
         const config = mentionConfig[host];
         let immediateMentions = [];
 

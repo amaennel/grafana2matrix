@@ -35,6 +35,15 @@ export function initDB() {
     ) STRICT;
   `);
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS subscriptions (
+      room_id TEXT NOT NULL,
+      host TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      PRIMARY KEY (room_id, host)
+    ) STRICT;
+  `);
+
   // Prepare statements once
   statements.getAllActiveAlerts = db.prepare('SELECT id, data FROM active_alerts');
   statements.getActiveAlert = db.prepare('SELECT data FROM active_alerts WHERE id = ?');
@@ -54,6 +63,12 @@ export function initDB() {
   statements.getBotState = db.prepare('SELECT value FROM bot_state WHERE key = ?');
   statements.setBotState = db.prepare('INSERT OR REPLACE INTO bot_state (key, value) VALUES (?, ?)');
   statements.deleteBotState = db.prepare('DELETE FROM bot_state WHERE key = ?');
+
+  statements.getAllSubscriptions = db.prepare('SELECT room_id, host, user_id FROM subscriptions');
+  statements.getSubscriptionsForRoom = db.prepare('SELECT host, user_id FROM subscriptions WHERE room_id = ? ORDER BY host');
+  statements.addSubscription = db.prepare('INSERT OR REPLACE INTO subscriptions (room_id, host, user_id) VALUES (?, ?, ?)');
+  statements.deleteSubscription = db.prepare('DELETE FROM subscriptions WHERE room_id = ? AND host = ?');
+  statements.deleteSubscriptionsForRoom = db.prepare('DELETE FROM subscriptions WHERE room_id = ?');
 }
 
 // Active Alerts
@@ -131,4 +146,32 @@ export function setBotState(key, value) {
 
 export function deleteBotState(key) {
   statements.deleteBotState.run(key);
+}
+
+// Host Subscriptions (private chats)
+export function getAllSubscriptions() {
+  return statements.getAllSubscriptions.all().map(row => ({
+    roomId: String(row.room_id),
+    host: String(row.host),
+    userId: String(row.user_id),
+  }));
+}
+
+export function getSubscriptionsForRoom(roomId) {
+  return statements.getSubscriptionsForRoom.all(roomId).map(row => ({
+    host: String(row.host),
+    userId: String(row.user_id),
+  }));
+}
+
+export function addSubscription(roomId, host, userId) {
+  statements.addSubscription.run(roomId, host, userId);
+}
+
+export function deleteSubscription(roomId, host) {
+  return Number(statements.deleteSubscription.run(roomId, host).changes) > 0;
+}
+
+export function deleteSubscriptionsForRoom(roomId) {
+  statements.deleteSubscriptionsForRoom.run(roomId);
 }

@@ -18,6 +18,9 @@ This project is a bridge between Grafana Alerting and Matrix. It receives webhoo
   - Sends a digest of active alerts at specific scheduled times defined in UTC.
   - Helps keep track of long-running issues.
   - By default even summaries without active alerts are sent. This can be disabled to reduce messages.
+- **Private Host Subscriptions:**
+  - Open a private chat with the bot and subscribe to individual hosts (wildcards supported).
+  - The private chat receives the same firing/resolved notifications as the channel, but only for the subscribed hosts.
 - **Persistence:** All internal state is stored in a SQLiteDB, allowing for restarts without a flood of messages during startup.
 
 ## Prerequisites
@@ -66,6 +69,7 @@ MATRIX_ACCESS_TOKEN=your_matrix_access_token
 MATRIX_ROOM_ID=!your_room_id:matrix.org
 KEEP_ALIVE_INTERVAL=60            # update interval for the status message, set to 0 to disable
 ADDITIONAL_LABELS=label1,label2,annotation3 #optional
+SUBSCRIPTION_ALLOWED_USERS=@user1:matrix.org,@user2:matrix.org #optional, see "Private Host Subscriptions"
 
 # Grafana Configuration (Required for Silencing)
 GRAFANA_URL=https://your-grafana-instance.com
@@ -192,6 +196,28 @@ The bot supports the following commands in the Matrix room:
 - **`.reload-config`**: Reloads the configuration from disk (both `.env` and `config.json`) without restarting the process. Useful for updating mention configurations or schedules on the fly.
 
 
+
+## Private Host Subscriptions
+
+Instead of (or in addition to) watching the alert channel, you can get alerts for specific hosts in a private chat with the bot:
+
+1. Start a direct message with the bot user (invite it to a new room). The bot joins automatically and posts a help message.
+2. Subscribe to the hosts you care about:
+   - **`.subscribe <host> [<host> ...]`**: Subscribe to one or more hosts. `*` works as a wildcard, e.g. `.subscribe web-* db01`.
+   - **`.unsubscribe <host> [<host> ...]`**: Remove subscriptions (use the exact pattern you subscribed with).
+   - **`.subscriptions`**: List the current subscriptions of this chat.
+   - **`.hosts`**: List known hosts (hosts with active alerts and hosts from the mention config).
+   - **`.help`**: Show the help message.
+
+The host is matched against the `host` label (or `instance`, if there is no `host` label), just like in the channel message.
+Every firing and resolved notification sent to the channel for a subscribed host is also sent to the private chat (without mentions).
+Reacting with 🔇 to an alert in the private chat silences it, just like in the channel; the confirmation is posted in both rooms.
+
+**Access control:** By default only users that are members of the alert room (`MATRIX_ROOM_ID`) can use subscriptions, since they can already see all alerts.
+Invites from other users are rejected, and subscribers who leave the alert room stop receiving alerts.
+Set `SUBSCRIPTION_ALLOWED_USERS` to a comma-separated list of Matrix user IDs to use an explicit allowlist instead.
+
+When everyone else leaves the private chat, the bot leaves as well and deletes its subscriptions.
 
 ## Alert Labels
 
